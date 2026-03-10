@@ -1,4 +1,4 @@
-#!/bin/bash
+"cd /home/ubuntu/quietready && git pull origin main && pm2 restart all"#!/bin/bash
 echo "🚀 Pushing to GitHub..."
 git add .
 git commit -m "${1:-update}"
