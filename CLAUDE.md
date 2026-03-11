@@ -434,3 +434,31 @@ The EC2 server has a split structure that predates Git setup:
   cp /home/ubuntu/quietready/server.js /home/ubuntu/quietready/api/server.js
   cp /home/ubuntu/quietready/email.js /home/ubuntu/quietready/api/email.js
   cp /home/ubuntu/quietready/billing.js /home/ubuntu/quietready/api/billing.js
+
+  ---
+
+## Code Access Notes (2026-03-11)
+
+### GitHub repo is PUBLIC
+- URL: https://github.com/allantonesgit/quietready
+- Claude cannot access raw.githubusercontent.com (blocked by network policy)
+- Claude cannot access GitHub API for large files (size limit)
+- Best workaround: paste code directly into chat, or upload files
+
+### Current blocker (SetPasswordScreen — "Auth session missing!")
+The magic link access_token from the URL hash is not a valid session token.
+Fix requires two changes:
+
+1. quietready.jsx — replace the magic link useEffect to call /api/auth/exchange-token
+   first, which validates the token server-side and returns a real session token.
+   Also add "linkerror" screen for expired links + ResendMagicLink component.
+
+2. server.js — add two new endpoints:
+   POST /api/auth/exchange-token — calls supabase.auth.setSession() with the
+     access_token + refresh_token from the URL hash, returns session.access_token
+   POST /api/auth/resend-magic-link — generates fresh magic link, sends via Mandrill
+
+### Full fix code
+Claude wrote the complete fix in the previous session. Start new chat, reference
+this note, and ask Claude to apply the SetPasswordScreen fix. The code is in the
+previous conversation history.
