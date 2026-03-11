@@ -393,3 +393,44 @@ The EC2 server has a split structure that predates Git setup:
 ### Known issues to fix
 - Add `app.set('trust proxy', 1)` to server.js (stops rate limiter ValidationError)
 - Verify BILLING_API_KEY env var is set on EC2 (onboarding returning Unauthorized)
+
+---
+
+## Session Notes 2026-03-11
+
+### Fixes completed
+- Fixed BILLING_API_KEY, MANDRILL_API_KEY, STRIPE_WEBHOOK_SECRET in /etc/environment
+- Added BASE_URL="https://quietready.ai" to /etc/environment
+- Fixed customers_status_check constraint to include "preview" status:
+  ALTER TABLE customers DROP CONSTRAINT customers_status_check;
+  ALTER TABLE customers ADD CONSTRAINT customers_status_check
+    CHECK (status IN ('preview', 'active', 'paused', 'cancelled'));
+- PM2 now registered as systemd service (survives reboots)
+- PM2 restart command must use --update-env to pick up env var changes
+- Logs flushed — old cached errors no longer showing
+
+### Magic link flow fix
+- server.js now calls supabase.auth.admin.generateLink() after creating user
+- Magic link passed to sendWelcomeEmail() as 4th argument
+- Welcome email updated with correct preview messaging and "View My Plan" CTA
+- Supabase OTP expiry should be set to 86400 (24 hours) in Auth settings
+
+### Current blocker
+- SetPasswordScreen shows "Auth session missing!" when submitting
+- Root cause: Supabase session from magic link token not being established
+  before the password set API call
+- Need to fix SetPasswordScreen to call supabase.auth.setSession() with
+  the access_token and refresh_token from the URL hash BEFORE calling
+  POST /api/auth/set-password
+
+### PM2 env var notes
+- /etc/environment is NOT automatically read by PM2
+- Always use: pm2 restart all --update-env
+- Or: export $(cat /etc/environment | grep -v '^PATH' | xargs) before pm2 start
+- After any /etc/environment change, must restart PM2 with --update-env
+
+### Deploy reminder
+- After git pull on EC2, must also copy files to api folder:
+  cp /home/ubuntu/quietready/server.js /home/ubuntu/quietready/api/server.js
+  cp /home/ubuntu/quietready/email.js /home/ubuntu/quietready/api/email.js
+  cp /home/ubuntu/quietready/billing.js /home/ubuntu/quietready/api/billing.js
