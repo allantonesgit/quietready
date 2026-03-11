@@ -320,3 +320,76 @@ PORT                   # default 3001
 - Session 1 (2026-03-10): Explored live site, assessed wizard steps 1–9, identified missing checkout flow
 - Session 2 (2026-03-10): Reviewed full codebase, built preview portal flow: magic link → set password → gated portal → activation checkout with Stripe + addresses
 - Session 3 (2026-03-10): Set up Git, GitHub repo, EC2 Git integration, one-command deploy script
+
+---
+
+## Server Structure (IMPORTANT — learned 2026-03-10)
+
+The EC2 server has a split structure that predates Git setup:
+
+| Path | Purpose |
+|---|---|
+| `/home/ubuntu/quietready/` | Git root — all source files live here |
+| `/home/ubuntu/quietready/api/` | Old API location — has `node_modules` only |
+| `/home/ubuntu/quietready/frontend/` | Nginx web root — manually created |
+| `/home/ubuntu/quietready/frontend/index.html` | Static HTML entry point |
+| `/home/ubuntu/quietready/frontend/quietready.jsx` | Symlink → `../quietready.jsx` |
+
+### Nginx
+- Config: `/etc/nginx/sites-enabled/quietready`
+- Serves static files from: `/home/ubuntu/quietready/frontend/`
+- Proxies `/api/*` to: `http://127.0.0.1:3001`
+
+### PM2
+- Now points to: `/home/ubuntu/quietready/server.js` ✅
+- node_modules at: `/home/ubuntu/quietready/api/node_modules`
+
+### Frontend loading (no build step)
+- Babel standalone transpiles JSX in the browser at runtime
+- React/ReactDOM loaded as UMD globals from unpkg CDN
+- **quietready.jsx must NOT use `import` or `export`**
+- First line must be: `const { useState, useEffect, useRef } = React;`
+- Last line must be: `ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));`
+
+### Deploy gotcha
+After `git pull`, the symlink in `frontend/` keeps `quietready.jsx` in sync automatically.
+The `index.html` only needs to be updated manually if the HTML shell changes.
+
+### Known issues fixed
+- `trust proxy` not set → rate limiter throws ValidationError (non-fatal, fix: add `app.set('trust proxy', 1)` to server.js)
+- Billing API returning Unauthorized → `BILLING_API_KEY` env var needs to be set on EC2
+
+---
+
+## Server Structure (IMPORTANT — learned 2026-03-10)
+
+The EC2 server has a split structure that predates Git setup:
+
+| Path | Purpose |
+|---|---|
+| `/home/ubuntu/quietready/` | Git root — all source files live here |
+| `/home/ubuntu/quietready/api/` | Old API location — has `node_modules` only |
+| `/home/ubuntu/quietready/frontend/` | Nginx web root — manually created, not in git |
+| `/home/ubuntu/quietready/frontend/index.html` | Static HTML entry point — manually maintained |
+| `/home/ubuntu/quietready/frontend/quietready.jsx` | Symlink → `../quietready.jsx` |
+
+### Nginx config
+- File: `/etc/nginx/sites-enabled/quietready`
+- Serves static files from: `/home/ubuntu/quietready/frontend/`
+- Proxies `/api/*` to: `http://127.0.0.1:3001`
+
+### PM2
+- Points to: `/home/ubuntu/quietready/server.js`
+- node_modules at: `/home/ubuntu/quietready/api/node_modules`
+
+### Frontend loading (NO build step — Babel in browser)
+- React/ReactDOM loaded as UMD globals from unpkg CDN
+- Babel standalone transpiles JSX at runtime
+- **quietready.jsx must NOT use import or export statements**
+- First line must be: `const { useState, useEffect, useRef } = React;`
+- Last line must be: `ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));`
+- The symlink keeps quietready.jsx in sync automatically on every git pull
+
+### Known issues to fix
+- Add `app.set('trust proxy', 1)` to server.js (stops rate limiter ValidationError)
+- Verify BILLING_API_KEY env var is set on EC2 (onboarding returning Unauthorized)
