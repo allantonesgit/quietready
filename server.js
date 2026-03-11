@@ -316,6 +316,63 @@ app.post("/api/auth/set-password", async (req, res) => {
 
 
 // ============================================================
+// POST /api/auth/exchange-token
+// Exchanges a magic link access_token + refresh_token for a
+// real Supabase session token that can be used for API calls.
+// ============================================================
+app.post("/api/auth/exchange-token", async (req, res) => {
+  const { accessToken, refreshToken } = req.body;
+  if (!accessToken || !refreshToken) {
+    return res.status(400).json({ error: "accessToken and refreshToken are required" });
+  }
+  try {
+    const { data, error } = await supabase.auth.setSession({
+      access_token: accessToken,
+      refresh_token: refreshToken,
+    });
+    if (error || !data.session) {
+      return res.status(401).json({ error: "Invalid or expired link." });
+    }
+    res.json({ sessionToken: data.session.access_token });
+  } catch (err) {
+    console.error("exchange-token error:", err);
+    res.status(500).json({ error: "Token exchange failed." });
+  }
+});
+
+
+// ============================================================
+// POST /api/auth/resend-magic-link
+// Generates a fresh magic link for a customer whose link expired
+// and re-sends the welcome email with the new link.
+// ============================================================
+app.post("/api/auth/resend-magic-link", async (req, res) => {
+  const { email } = req.body;
+  if (!email) return res.status(400).json({ error: "Email is required" });
+  try {
+    const { data, error } = await supabase.auth.admin.generateLink({
+      type: "magiclink",
+      email,
+      options: { redirectTo: process.env.BASE_URL || "https://quietready.ai" },
+    });
+    if (error) return res.status(400).json({ error: error.message });
+    const magicLink = data.properties?.action_link;
+    // Look up the customer name for a personalized email
+    const { data: customer } = await supabase
+      .from("customers")
+      .select("full_name, id")
+      .eq("email", email)
+      .maybeSingle();
+    sendWelcomeEmail(email, customer?.full_name || null, customer?.id || null, magicLink).catch(console.error);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("resend-magic-link error:", err);
+    res.status(500).json({ error: "Could not generate link." });
+  }
+});
+
+
+// ============================================================
 // ONBOARDING — Create Stripe SetupIntent for payment step
 // POST /api/onboarding/create-setup-intent
 // Called when preview customer clicks Activate and reaches payment.

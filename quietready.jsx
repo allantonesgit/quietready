@@ -1943,6 +1943,89 @@ function StepSuccess({ data }) {
 // ─── SET PASSWORD SCREEN ──────────────────────────────────────────────────────
 // Shown after clicking the magic link. User sets a password, then enters portal.
 
+function LinkErrorScreen({ onBack }) {
+  const [email, setEmail] = useState("");
+  const [status, setStatus] = useState("idle"); // idle | sending | sent | error
+  const [errorMsg, setErrorMsg] = useState("");
+
+  const handleResend = async () => {
+    if (!email.includes("@")) { setErrorMsg("Please enter a valid email address."); return; }
+    setStatus("sending");
+    setErrorMsg("");
+    try {
+      const res = await fetch("/api/auth/resend-magic-link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Could not send link.");
+      setStatus("sent");
+    } catch (err) {
+      setErrorMsg(err.message);
+      setStatus("error");
+    }
+  };
+
+  return (
+    <div style={{ minHeight: "100vh", background: COLORS.cream, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "24px" }}>
+      <div style={{ background: COLORS.white, borderRadius: "16px", padding: "48px 40px", maxWidth: "440px", width: "100%", boxShadow: "0 12px 40px rgba(0,0,0,0.10)" }}>
+        <div style={{ textAlign: "center", marginBottom: "32px" }}>
+          <div style={{ fontSize: "22px", fontWeight: "700", color: COLORS.moss, fontFamily: "'Georgia', serif", letterSpacing: "-0.3px" }}>QuietReady.ai</div>
+          <div style={{ fontSize: "10px", letterSpacing: "2px", textTransform: "uppercase", color: COLORS.stone, fontFamily: "'Helvetica Neue', sans-serif", marginTop: "4px" }}>Smart Pantry. Peace of Mind.</div>
+        </div>
+        {status === "sent" ? (
+          <div style={{ textAlign: "center" }}>
+            <div style={{ fontSize: "40px", marginBottom: "16px" }}>📬</div>
+            <h2 style={{ margin: "0 0 12px", fontSize: "22px", fontWeight: "700", color: COLORS.bark, letterSpacing: "-0.5px" }}>New link sent!</h2>
+            <p style={{ margin: "0 0 28px", fontSize: "14px", color: COLORS.stone, fontFamily: "'Helvetica Neue', sans-serif", lineHeight: "1.6" }}>
+              Check your inbox for a fresh magic link. It'll expire in 24 hours.
+            </p>
+            <button onClick={onBack} style={{ background: "none", border: "none", color: COLORS.moss, fontSize: "14px", cursor: "pointer", fontFamily: "'Helvetica Neue', sans-serif", fontWeight: "600" }}>
+              ← Back to home
+            </button>
+          </div>
+        ) : (
+          <>
+            <div style={{ fontSize: "40px", marginBottom: "16px", textAlign: "center" }}>🔗</div>
+            <h2 style={{ margin: "0 0 8px", fontSize: "22px", fontWeight: "700", color: COLORS.bark, textAlign: "center", letterSpacing: "-0.5px" }}>This link has expired</h2>
+            <p style={{ margin: "0 0 28px", fontSize: "14px", color: COLORS.stone, textAlign: "center", fontFamily: "'Helvetica Neue', sans-serif", lineHeight: "1.6" }}>
+              Magic links expire after 24 hours. Enter your email below and we'll send a fresh one.
+            </p>
+            <label style={{ display: "block", fontSize: "10px", fontWeight: "700", letterSpacing: "1.5px", textTransform: "uppercase", color: COLORS.stone, marginBottom: "8px", fontFamily: "'Helvetica Neue', sans-serif" }}>
+              Your email address
+            </label>
+            <input
+              type="email"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && handleResend()}
+              placeholder="jane@example.com"
+              autoFocus
+              style={{ width: "100%", padding: "14px 16px", borderRadius: "8px", border: `1.5px solid ${COLORS.mist}`, fontSize: "15px", color: COLORS.bark, background: COLORS.white, outline: "none", fontFamily: "'Georgia', serif", boxSizing: "border-box", marginBottom: "16px" }}
+            />
+            {errorMsg && (
+              <div style={{ background: "#FEF0EE", border: "1px solid #F5C6C0", borderRadius: "8px", padding: "10px 14px", fontSize: "13px", color: "#B94040", marginBottom: "16px", fontFamily: "'Helvetica Neue', sans-serif" }}>
+                {errorMsg}
+              </div>
+            )}
+            <button
+              onClick={handleResend}
+              disabled={status === "sending"}
+              style={{ width: "100%", background: status === "sending" ? COLORS.stone : COLORS.moss, color: COLORS.white, border: "none", borderRadius: "10px", padding: "15px", fontSize: "15px", fontWeight: "700", cursor: status === "sending" ? "not-allowed" : "pointer", fontFamily: "inherit", transition: "background 0.2s", marginBottom: "12px" }}
+            >
+              {status === "sending" ? "Sending..." : "Send a new link →"}
+            </button>
+            <button onClick={onBack} style={{ width: "100%", background: "none", border: "none", color: COLORS.stone, fontSize: "13px", cursor: "pointer", fontFamily: "inherit" }}>
+              ← Back to home
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function SetPasswordScreen({ token, onComplete }) {
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -2821,7 +2904,7 @@ function LandingPage({ onStart }) {
 // ─── MAIN APP ─────────────────────────────────────────────────────────────────
 
 export default function App() {
-  const [screen, setScreen] = useState("landing"); // landing | questionnaire | portal | setpassword
+  const [screen, setScreen] = useState("landing"); // landing | questionnaire | portal | setpassword | linkerror
   const [stepIndex, setStepIndex] = useState(0);
   const [formData, setFormData] = useState({});
   const [showEmailModal, setShowEmailModal] = useState(false);
@@ -2841,18 +2924,27 @@ export default function App() {
     const hash = window.location.hash;
     const params = new URLSearchParams(hash.replace("#", "?"));
     const accessToken = params.get("access_token");
+    const refreshToken = params.get("refresh_token");
     const type = params.get("type"); // "magiclink" | "signup" | "recovery"
 
-    if (accessToken && (type === "magiclink" || type === "signup")) {
-      localStorage.setItem("qr_token", accessToken);
-      setAuthToken(accessToken);
-      setNewPasswordToken(accessToken); // prompt for password first
+    if (accessToken && (type === "magiclink" || type === "signup" || type === "recovery")) {
       window.history.replaceState(null, "", window.location.pathname);
-      setScreen("setpassword");
-    } else if (accessToken && type === "recovery") {
-      setNewPasswordToken(accessToken);
-      window.history.replaceState(null, "", window.location.pathname);
-      setScreen("setpassword");
+      // Exchange the magic link token for a real Supabase session token
+      fetch("/api/auth/exchange-token", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accessToken, refreshToken }),
+      })
+        .then(res => res.json())
+        .then(data => {
+          if (data.sessionToken) {
+            setNewPasswordToken(data.sessionToken);
+            setScreen("setpassword");
+          } else {
+            setScreen("linkerror");
+          }
+        })
+        .catch(() => setScreen("linkerror"));
     } else {
       // Check if already logged in
       const saved = localStorage.getItem("qr_token");
@@ -2966,6 +3058,11 @@ export default function App() {
         }}
       />
     );
+  }
+
+  // ── Link error screen (expired/invalid magic link) ───────────
+  if (screen === "linkerror") {
+    return <LinkErrorScreen onBack={() => setScreen("landing")} />;
   }
 
   // ── Portal screen ─────────────────────────────────────────────
