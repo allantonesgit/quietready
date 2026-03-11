@@ -253,13 +253,10 @@ app.post("/api/onboarding/submit", async (req, res) => {
     const { data: linkData } = await supabase.auth.admin.generateLink({
       type: 'magiclink',
       email,
-      options: { redirectTo: 'https://quietready.ai/portal' },
+      options: { redirectTo: process.env.BASE_URL || 'https://quietready.ai' },
     });
-    const magicLink = linkData?.properties?.action_link || `${process.env.BASE_URL}/portal`;
+    const magicLink = linkData?.properties?.action_link;
     sendWelcomeEmail(email, fullName, customerId, magicLink).catch(console.error);
-
-    // 13. Send welcome email (async, don't block response)
-    sendWelcomeEmail(email, fullName, customerId).catch(console.error);
 
 
 
@@ -357,7 +354,6 @@ app.post("/api/auth/resend-magic-link", async (req, res) => {
     });
     if (error) return res.status(400).json({ error: error.message });
     const magicLink = data.properties?.action_link;
-    // Look up the customer name for a personalized email
     const { data: customer } = await supabase
       .from("customers")
       .select("full_name, id")
