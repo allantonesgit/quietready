@@ -91,24 +91,28 @@ function emailWrapper(content) {
 
 // ── 1. Welcome email ──────────────────────────────────────────
 // Sent immediately after onboarding. No order details yet.
-async function sendWelcomeEmail(email, fullName, customerId) {
+
+async function sendWelcomeEmail(email, fullName, customerId, magicLink) {
   const firstName = fullName?.split(" ")[0] || "there";
+  const portalLink = magicLink || `${BASE_URL}/portal`;
+
   const html = emailWrapper(`
-    <h1 style="${styles.h1}">Welcome to QuietReady, ${firstName}. 🏡</h1>
+    <h1 style="${styles.h1}">Your QuietReady plan is ready, ${firstName}. 🏡</h1>
     <p style="${styles.pDark}">
-      Your family's food security plan is confirmed. We're now sourcing everything on your list from our network of trusted suppliers.
+      We've built your personalized food security plan. Click below to set your password and preview your plan — no payment needed yet.
     </p>
-    <p style="${styles.p}">
-      Each supplier ships directly to your door — you'll get a notification here as each shipment is confirmed and ready for placement.
+
+    <p style="text-align:center;margin:28px 0;">
+      <a href="${portalLink}" style="${styles.btn}">View My Plan →</a>
     </p>
 
     <div style="${styles.card}">
       <p style="font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#8C8278;margin:0 0 12px;">What happens next</p>
       ${[
+        ["Right now",   "Set your password and preview your full Month 1 plan"],
+        ["When ready",  "Activate your plan with payment info to begin fulfillment"],
         ["1–3 days",    "Your container kit ships first — arrives before the food"],
         ["5–14 days",   "Supplier shipments begin arriving directly at your door"],
-        ["Each arrival","Your portal updates with step-by-step placement instructions"],
-        ["30 days",     "First monthly billing cycle begins after your plan is fully stocked"],
       ].map(([time, desc], i, arr) => `
         <div style="${i < arr.length - 1 ? styles.row : styles.rowLast}">
           <span style="${styles.label}">${time}</span>
@@ -116,19 +120,16 @@ async function sendWelcomeEmail(email, fullName, customerId) {
         </div>`).join("")}
     </div>
 
-    <p style="text-align:center;margin:28px 0;">
-      <a href="${BASE_URL}/portal" style="${styles.btn}">View Your Portal →</a>
-    </p>
     <hr style="${styles.divider}">
     <p style="${styles.p}">
-      Your portal shows your storage map, placement instructions, rotation schedule, and full order history — all in one place. Bookmark it.
+      This link expires in 24 hours. If it expires, you can request a new one at <a href="${BASE_URL}" style="color:#C4773B;">quietready.ai</a>.
     </p>
   `);
 
   await sendEmail({
     to:      email,
     toName:  fullName,
-    subject: `Welcome to QuietReady, ${firstName} — your plan is confirmed`,
+    subject: `Your QuietReady plan is ready — set your password to view it`,
     html,
   });
 }

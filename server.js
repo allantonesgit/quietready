@@ -249,8 +249,19 @@ app.post("/api/onboarding/submit", async (req, res) => {
     const firstBillingDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
     await createBillingTemplate(billingCustomerId, firstBillingDate);
 
-    // 12. Send welcome email (async, don't block response)
+    // 12. Generate magic link and send welcome email
+    const { data: linkData } = await supabase.auth.admin.generateLink({
+      type: 'magiclink',
+      email,
+      options: { redirectTo: 'https://quietready.ai/portal' },
+    });
+    const magicLink = linkData?.properties?.action_link || `${process.env.BASE_URL}/portal`;
+    sendWelcomeEmail(email, fullName, customerId, magicLink).catch(console.error);
+
+    // 13. Send welcome email (async, don't block response)
     sendWelcomeEmail(email, fullName, customerId).catch(console.error);
+
+
 
     res.json({
       success: true,
