@@ -15,6 +15,7 @@
 //   PORT                 — default 3001
 // ============================================================
 
+import crypto          from "crypto";
 import express         from "express";
 import cors            from "cors";
 import helmet          from "helmet";
@@ -88,6 +89,7 @@ app.use("/api/", limiter);
 // Stripe webhooks need raw body — must be before express.json()
 app.use("/api/webhooks/stripe", express.raw({ type: "application/json" }));
 app.use(express.json({ limit: "2mb" }));
+app.use(express.urlencoded({ extended: true }));
 
 
 // ── Auth middleware ────────────────────────────────────────────
@@ -150,14 +152,18 @@ app.post("/api/onboarding/submit", async (req, res) => {
   }
 
   try {
-    // 1. Create Supabase auth user (sends magic link / sets temp password)
+    // 1. Create Supabase auth user, then explicitly confirm so generateLink
+    //    produces a magiclink token (not a signup token)
     const { data: authData, error: authErr } = await supabase.auth.admin.createUser({
       email,
-      email_confirm: true,
+      email_confirm: false,
       user_metadata: { full_name: fullName },
     });
     if (authErr) throw new Error(`Auth creation failed: ${authErr.message}`);
     const authUserId = authData.user.id;
+
+    // Explicitly confirm the email so the user is treated as confirmed
+    await supabase.auth.admin.updateUserById(authUserId, { email_confirm: true });
 
     // 2. Create Stripe customer
     const stripeCustomer = await stripe.customers.create({
@@ -249,17 +255,20 @@ app.post("/api/onboarding/submit", async (req, res) => {
     const firstBillingDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
     await createBillingTemplate(billingCustomerId, firstBillingDate);
 
-    // 12. Generate magic link and send welcome email
-    //     redirectTo must be the root domain — React intercepts the #hash
-    //     email_confirm:true on createUser means Supabase does NOT send its own email
-    const { data: linkData, error: linkErr } = await supabase.auth.admin.generateLink({
-      type: 'magiclink',
-      email,
-      options: { redirectTo: process.env.BASE_URL || 'https://quietready.ai' },
-    });
-    if (linkErr) console.error("generateLink error:", linkErr.message);
-    const magicLink = linkData?.properties?.action_link;
+    // 12. Generate magic link using our own token system
+    //     Supabase's generateLink invalidates itself via internal emails.
+    //     Instead: store a secure random token in customers table,
+    //     email a link to /api/auth/magic?token=xxx which exchanges it for a session.
+    const loginToken = crypto.randomBytes(32).toString('hex');
+    const loginTokenExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+    await supabase.from('customers').update({
+      login_token: loginToken,
+      login_token_expires_at: loginTokenExpiry,
+    }).eq('id', customerId);
+    const magicLink = `${process.env.BASE_URL || 'https://quietready.ai'}/api/auth/magic?token=${loginToken}`;
+    console.log("🔗 magicLink:", magicLink);
     sendWelcomeEmail(email, fullName, customerId, magicLink).catch(console.error);
+
 
 
 
@@ -316,57 +325,137 @@ app.post("/api/auth/set-password", async (req, res) => {
 
 
 // ============================================================
-// POST /api/auth/exchange-token
-// Exchanges a magic link access_token + refresh_token for a
-// real Supabase session token that can be used for API calls.
+// GET /api/auth/magic?token=xxx
+// Exchanges our custom login token for a real Supabase session
+// then redirects to the app with the session hash
 // ============================================================
-app.post("/api/auth/exchange-token", async (req, res) => {
-  const { accessToken, refreshToken } = req.body;
-  if (!accessToken || !refreshToken) {
-    return res.status(400).json({ error: "accessToken and refreshToken are required" });
-  }
+app.get("/api/auth/magic", async (req, res) => {
+  const { token } = req.query;
+  if (!token) return res.redirect('https://quietready.ai/#error=missing_token');
+  // Validate token exists and is not expired — but DO NOT consume it yet.
+  // We just show a confirmation page. Outlook/email scanners hit GET links
+  // automatically, so we never exchange the token on GET.
   try {
-    const { data, error } = await supabase.auth.setSession({
-      access_token: accessToken,
-      refresh_token: refreshToken,
-    });
-    if (error || !data.session) {
-      return res.status(401).json({ error: "Invalid or expired link." });
+    const { data: customer, error } = await supabase
+      .from('customers')
+      .select('id, login_token_expires_at')
+      .eq('login_token', token)
+      .single();
+    const expired = !customer || error || new Date(customer.login_token_expires_at) < new Date();
+    // Serve a minimal HTML page with a button that POSTs the token
+    res.send(`<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>QuietReady — Enter Your Portal</title>
+  <style>
+    body { margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center;
+           background:#F7F3ED; font-family:'Helvetica Neue',sans-serif; }
+    .card { background:#FDFCFA; border-radius:16px; padding:48px 40px; max-width:400px;
+            width:90%; text-align:center; box-shadow:0 12px 40px rgba(0,0,0,0.10); }
+    .logo { font-size:22px; font-weight:700; color:#4A5C3A; font-family:Georgia,serif; margin-bottom:4px; }
+    .sub { font-size:10px; letter-spacing:2px; text-transform:uppercase; color:#8C8278; margin-bottom:32px; }
+    .icon { font-size:40px; margin-bottom:16px; }
+    h2 { margin:0 0 8px; font-size:22px; font-weight:700; color:#2C2416; }
+    p { margin:0 0 28px; font-size:14px; color:#8C8278; line-height:1.6; }
+    .btn { display:inline-block; background:#4A5C3A; color:#FDFCFA; border:none; border-radius:10px;
+           padding:15px 32px; font-size:15px; font-weight:700; cursor:pointer; width:100%;
+           text-decoration:none; box-sizing:border-box; }
+    .err { color:#B94040; font-size:14px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo">QuietReady.ai</div>
+    <div class="sub">Smart Pantry. Peace of Mind.</div>
+    ${expired
+      ? `<div class="icon">🔗</div>
+         <h2>Link expired</h2>
+         <p class="err">This link has expired. Please request a new one.</p>
+         <a href="https://quietready.ai" class="btn">Back to Home</a>`
+      : `<div class="icon">🏡</div>
+         <h2>Your plan is ready</h2>
+         <p>Click below to set your password and enter your portal.</p>
+         <form method="POST" action="/api/auth/magic">
+           <input type="hidden" name="token" value="${token}">
+           <button type="submit" class="btn">Enter My Portal →</button>
+         </form>`
     }
-    res.json({ sessionToken: data.session.access_token });
+  </div>
+</body>
+</html>`);
   } catch (err) {
-    console.error("exchange-token error:", err);
-    res.status(500).json({ error: "Token exchange failed." });
+    console.error('Magic GET error:', err);
+    res.redirect('https://quietready.ai/#error=server_error');
   }
 });
 
-
-// ============================================================
-// POST /api/auth/resend-magic-link
-// Generates a fresh magic link for a customer whose link expired
-// and re-sends the welcome email with the new link.
-// ============================================================
-app.post("/api/auth/resend-magic-link", async (req, res) => {
-  const { email } = req.body;
-  if (!email) return res.status(400).json({ error: "Email is required" });
+app.post("/api/auth/magic", async (req, res) => {
+  const { token } = req.body;
+  if (!token) return res.redirect(303, 'https://quietready.ai/#error=missing_token');
   try {
-    const { data, error } = await supabase.auth.admin.generateLink({
-      type: "magiclink",
-      email,
-      options: { redirectTo: process.env.BASE_URL || "https://quietready.ai" },
-    });
-    if (error) return res.status(400).json({ error: error.message });
-    const magicLink = data.properties?.action_link;
-    const { data: customer } = await supabase
-      .from("customers")
-      .select("full_name, id")
-      .eq("email", email)
-      .maybeSingle();
-    sendWelcomeEmail(email, customer?.full_name || null, customer?.id || null, magicLink).catch(console.error);
-    res.json({ ok: true });
+    const { data: customer, error } = await supabase
+      .from('customers')
+      .select('id, email, login_token, login_token_expires_at')
+      .eq('login_token', token)
+      .single();
+    if (error || !customer) {
+      return res.redirect(303, 'https://quietready.ai/#error=access_denied&error_code=otp_expired&error_description=Link+is+invalid');
+    }
+    if (new Date(customer.login_token_expires_at) < new Date()) {
+      return res.redirect(303, 'https://quietready.ai/#error=access_denied&error_code=otp_expired&error_description=Link+has+expired');
+    }
+    // Invalidate token immediately
+    await supabase.from('customers').update({
+      login_token: null,
+      login_token_expires_at: null,
+    }).eq('id', customer.id);
+    // Look up the auth_user_id for this customer
+    const { data: custRow } = await supabase
+      .from('customers')
+      .select('auth_user_id')
+      .eq('email', customer.email)
+      .single();
+    if (!custRow?.auth_user_id) {
+      return res.redirect(303, 'https://quietready.ai/#error=session_error');
+    }
+    // Use signInWithPassword won't work, but we can use the admin REST API
+    // to create a session by calling the token endpoint directly
+    const tokenResp = await fetch(
+      `${process.env.SUPABASE_URL}/auth/v1/admin/users/${custRow.auth_user_id}/token`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': process.env.SUPABASE_SERVICE_KEY,
+          'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_KEY}`,
+        },
+      }
+    );
+    const tokenJson = await tokenResp.json();
+    console.log('🔗 token response status:', tokenResp.status);
+    console.log('🔗 token response:', JSON.stringify(tokenJson).substring(0, 300));
+    const access_token = tokenJson.access_token;
+    const refresh_token = tokenJson.refresh_token;
+    if (!access_token) {
+      // Fallback: redirect to Supabase verify URL directly (GET)
+      const { data: linkData, error: linkErr } = await supabase.auth.admin.generateLink({
+        type: 'magiclink',
+        email: customer.email,
+        options: { redirectTo: 'https://quietready.ai' },
+      });
+      if (linkErr || !linkData?.properties?.action_link) {
+        return res.redirect(303, 'https://quietready.ai/#error=session_error');
+      }
+      console.log('🔗 POST: falling back to Supabase verify redirect');
+      return res.redirect(303, linkData.properties.action_link);
+    }
+    console.log('🔗 POST: session created, redirecting with tokens');
+    return res.redirect(303, `https://quietready.ai/#access_token=${access_token}&refresh_token=${refresh_token}&type=magiclink`);
   } catch (err) {
-    console.error("resend-magic-link error:", err);
-    res.status(500).json({ error: "Could not generate link." });
+    console.error('Magic POST error:', err);
+    return res.redirect(303, 'https://quietready.ai/#error=server_error');
   }
 });
 

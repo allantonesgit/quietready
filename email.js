@@ -8,7 +8,7 @@ const FROM_NAME        = process.env.EMAIL_FROM_NAME || "QuietReady";
 const BASE_URL         = process.env.BASE_URL         || "https://quietready.ai";
 
 // ── Core send function ────────────────────────────────────────
-async function sendEmail({ to, toName, subject, html, text }) {
+async function sendEmail({ to, toName, subject, html, text, trackClicks = true }) {
   if (!MANDRILL_API_KEY) {
     console.warn("⚠️  MANDRILL_API_KEY not set — email skipped:", subject);
     return;
@@ -28,7 +28,7 @@ async function sendEmail({ to, toName, subject, html, text }) {
         to: [{ email: to, name: toName || to, type: "to" }],
         important: false,
         track_opens:  true,
-        track_clicks: true,
+        track_clicks: trackClicks,
         auto_text:    !text,
         tags: ["quietready-transactional"],
       },
@@ -127,10 +127,11 @@ async function sendWelcomeEmail(email, fullName, customerId, magicLink) {
   `);
 
   await sendEmail({
-    to:      email,
-    toName:  fullName,
-    subject: `Your QuietReady plan is ready — set your password to view it`,
+    to:          email,
+    toName:      fullName,
+    subject:     `Your QuietReady plan is ready — set your password to view it`,
     html,
+    trackClicks: false,  // magic link is one-time-use — tracking would consume it
   });
 }
 
