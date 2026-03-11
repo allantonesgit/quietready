@@ -250,11 +250,14 @@ app.post("/api/onboarding/submit", async (req, res) => {
     await createBillingTemplate(billingCustomerId, firstBillingDate);
 
     // 12. Generate magic link and send welcome email
-    const { data: linkData } = await supabase.auth.admin.generateLink({
+    //     redirectTo must be the root domain — React intercepts the #hash
+    //     email_confirm:true on createUser means Supabase does NOT send its own email
+    const { data: linkData, error: linkErr } = await supabase.auth.admin.generateLink({
       type: 'magiclink',
       email,
       options: { redirectTo: process.env.BASE_URL || 'https://quietready.ai' },
     });
+    if (linkErr) console.error("generateLink error:", linkErr.message);
     const magicLink = linkData?.properties?.action_link;
     sendWelcomeEmail(email, fullName, customerId, magicLink).catch(console.error);
 
