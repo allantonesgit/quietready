@@ -310,9 +310,25 @@ app.post("/api/auth/set-password", async (req, res) => {
     const { error } = await supabase.auth.admin.updateUserById(user.id, { password });
     if (error) throw new Error(error.message);
 
+    // Generate a fresh magic link and exchange it for a new session token
+    // (password change invalidates the old JWT)
+    const { data: linkData, error: linkErr } = await supabase.auth.admin.generateLink({
+      type: 'magiclink',
+      email: user.email,
+      options: { redirectTo: 'https://quietready.ai' },
+    });
+    if (linkErr || !linkData?.properties?.action_link) {
+      // Fall back to old token if we can't get a fresh one
+      return res.json({ success: true, accessToken: token });
+    }
+    const verifyResp = await fetch(linkData.properties.action_link, { redirect: 'manual' });
+    const location = verifyResp.headers.get('location');
+    const hashParams = new URLSearchParams((location || '').split('#')[1] || '');
+    const freshToken = hashParams.get('access_token') || token;
+
     res.json({
       success: true,
-      accessToken: token,
+      accessToken: freshToken,
     });
   } catch (err) {
     console.error("Set password error:", err);
