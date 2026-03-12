@@ -2903,7 +2903,7 @@ function LandingPage({ onStart }) {
 
 // ─── MAIN APP ─────────────────────────────────────────────────────────────────
 
-export default function App() {
+function App() {
   const [screen, setScreen] = useState("landing"); // landing | questionnaire | portal | setpassword | linkerror
   const [stepIndex, setStepIndex] = useState(0);
   const [formData, setFormData] = useState({});
