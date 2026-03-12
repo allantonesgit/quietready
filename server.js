@@ -420,39 +420,27 @@ app.post("/api/auth/magic", async (req, res) => {
     if (!custRow?.auth_user_id) {
       return res.redirect(303, 'https://quietready.ai/#error=session_error');
     }
-    // Use signInWithPassword won't work, but we can use the admin REST API
-    // to create a session by calling the token endpoint directly
-    const tokenResp = await fetch(
-      `${process.env.SUPABASE_URL}/auth/v1/admin/users/${custRow.auth_user_id}/token`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'apikey': process.env.SUPABASE_SERVICE_KEY,
-          'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_KEY}`,
-        },
-      }
-    );
-    const tokenJson = await tokenResp.json();
-    console.log('🔗 token response status:', tokenResp.status);
-    console.log('🔗 token response:', JSON.stringify(tokenJson).substring(0, 300));
-    const access_token = tokenJson.access_token;
-    const refresh_token = tokenJson.refresh_token;
-    if (!access_token) {
-      // Fallback: redirect to Supabase verify URL directly (GET)
-      const { data: linkData, error: linkErr } = await supabase.auth.admin.generateLink({
-        type: 'magiclink',
-        email: customer.email,
-        options: { redirectTo: 'https://quietready.ai' },
-      });
-      if (linkErr || !linkData?.properties?.action_link) {
-        return res.redirect(303, 'https://quietready.ai/#error=session_error');
-      }
-      console.log('🔗 POST: falling back to Supabase verify redirect');
-      return res.redirect(303, linkData.properties.action_link);
+    // Generate a Supabase magic link, then fetch it server-side with redirect:manual
+    // so we capture the final redirect URL (which contains #access_token=...) and
+    // forward it to the browser. This avoids the browser ever touching Supabase directly.
+    const { data: linkData, error: linkErr } = await supabase.auth.admin.generateLink({
+      type: 'magiclink',
+      email: customer.email,
+      options: { redirectTo: 'https://quietready.ai' },
+    });
+    if (linkErr || !linkData?.properties?.action_link) {
+      console.error('🔗 generateLink error:', linkErr);
+      return res.redirect(303, 'https://quietready.ai/#error=session_error');
     }
-    console.log('🔗 POST: session created, redirecting with tokens');
-    return res.redirect(303, `https://quietready.ai/#access_token=${access_token}&refresh_token=${refresh_token}&type=magiclink`);
+    console.log('🔗 POST: fetching action_link with redirect:manual');
+    const verifyResp = await fetch(linkData.properties.action_link, { redirect: 'manual' });
+    const location = verifyResp.headers.get('location');
+    console.log('🔗 verify response status:', verifyResp.status);
+    console.log('🔗 location header:', location ? location.substring(0, 200) : 'null');
+    if (!location) {
+      return res.redirect(303, 'https://quietready.ai/#error=session_error');
+    }
+    return res.redirect(303, location);
   } catch (err) {
     console.error('Magic POST error:', err);
     return res.redirect(303, 'https://quietready.ai/#error=server_error');
