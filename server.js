@@ -484,6 +484,44 @@ app.post("/api/auth/resend-magic-link", async (req, res) => {
 });
 
 // ============================================================
+// AUTH — Exchange Supabase access_token for a session token
+// POST /api/auth/exchange-token
+// Called by frontend after magic link redirect lands with #access_token=...
+// Validates the token with Supabase, returns a sessionToken for localStorage.
+// ============================================================
+app.post("/api/auth/exchange-token", async (req, res) => {
+  const { accessToken, refreshToken } = req.body;
+  if (!accessToken) return res.status(400).json({ error: "Missing access token." });
+  try {
+    // Set the session on the supabase client using the tokens from the hash
+    const { data, error } = await supabase.auth.setSession({
+      access_token: accessToken,
+      refresh_token: refreshToken,
+    });
+    if (error || !data?.user) {
+      console.error('🔗 exchange-token error:', error);
+      return res.status(401).json({ error: "Invalid or expired token." });
+    }
+    // Look up the customer record
+    const { data: customer } = await supabase
+      .from('customers')
+      .select('id, email, full_name, status')
+      .eq('auth_user_id', data.user.id)
+      .single();
+    if (!customer) {
+      return res.status(404).json({ error: "Customer not found." });
+    }
+    // Use the access_token itself as the session token stored in localStorage
+    // All portal API calls will send this as Bearer token
+    console.log(`🔗 exchange-token: session established for ${customer.email}`);
+    return res.json({ sessionToken: accessToken, email: customer.email, status: customer.status });
+  } catch (err) {
+    console.error('exchange-token error:', err);
+    return res.status(500).json({ error: "Server error." });
+  }
+});
+
+// ============================================================
 // ONBOARDING — Create Stripe SetupIntent for payment step
 // POST /api/onboarding/create-setup-intent
 // Called when preview customer clicks Activate and reaches payment.
