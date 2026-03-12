@@ -302,21 +302,17 @@ app.post("/api/auth/set-password", async (req, res) => {
   }
 
   try {
-    // Use the user's own token to update their password
-    const userClient = createClient(
-      process.env.SUPABASE_URL,
-      process.env.SUPABASE_ANON_KEY,
-      { global: { headers: { Authorization: `Bearer ${token}` } } }
-    );
+    // Verify the token and get the user
+    const { data: { user }, error: userErr } = await supabase.auth.getUser(token);
+    if (userErr || !user) throw new Error('Invalid or expired session token');
 
-    const { data, error } = await userClient.auth.updateUser({ password });
+    // Use admin client to update password by user ID
+    const { error } = await supabase.auth.admin.updateUserById(user.id, { password });
     if (error) throw new Error(error.message);
 
-    // Return a fresh session token
-    const { data: session } = await userClient.auth.getSession();
     res.json({
       success: true,
-      accessToken: session?.session?.access_token || token,
+      accessToken: token,
     });
   } catch (err) {
     console.error("Set password error:", err);
