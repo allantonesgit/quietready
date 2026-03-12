@@ -450,6 +450,40 @@ app.post("/api/auth/magic", async (req, res) => {
 
 
 // ============================================================
+// AUTH — Resend magic link
+// POST /api/auth/resend-magic-link
+// Called from the expired-link screen. Generates a fresh token and emails it.
+// ============================================================
+app.post("/api/auth/resend-magic-link", async (req, res) => {
+  const { email } = req.body;
+  if (!email) return res.status(400).json({ error: "Email is required." });
+  try {
+    const { data: customer, error } = await supabase
+      .from('customers')
+      .select('id, email')
+      .eq('email', email.toLowerCase().trim())
+      .single();
+    if (error || !customer) {
+      // Don't reveal whether email exists — just return success
+      return res.json({ ok: true });
+    }
+    const loginToken = crypto.randomBytes(32).toString('hex');
+    const loginTokenExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+    await supabase.from('customers').update({
+      login_token: loginToken,
+      login_token_expires_at: loginTokenExpiry,
+    }).eq('id', customer.id);
+    const magicLink = `${process.env.BASE_URL || 'https://quietready.ai'}/api/auth/magic?token=${loginToken}`;
+    await sendWelcomeEmail(customer.email, customer.email, customer.id, magicLink);
+    console.log(`🔗 Resent magic link to ${customer.email}`);
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('Resend magic link error:', err);
+    return res.status(500).json({ error: "Server error. Please try again." });
+  }
+});
+
+// ============================================================
 // ONBOARDING — Create Stripe SetupIntent for payment step
 // POST /api/onboarding/create-setup-intent
 // Called when preview customer clicks Activate and reaches payment.
