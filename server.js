@@ -73,6 +73,7 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: "2024-04-
 
 // ── App setup ─────────────────────────────────────────────────
 const app  = express();
+app.set('trust proxy', 1); // Required for rate limiter behind Nginx
 const PORT = process.env.PORT || 3001;
 
 app.use(helmet());
