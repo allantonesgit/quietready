@@ -30,12 +30,7 @@ ssh -i /Users/allantone/ssh/QuietReady2026.pem ubuntu@ec2-54-160-4-222.compute-1
 echo "✅ Done!"
 ```
 
-**IMPORTANT:** The GitHub repo is OUT OF SYNC with the server. The server has been edited directly via SSH during debug sessions. Before using deploy.sh, first pull the live files from the server:
-```bash
-scp -i /Users/allantone/ssh/QuietReady2026.pem ubuntu@ec2-54-160-4-222.compute-1.amazonaws.com:/home/ubuntu/quietready/server.js ~/Desktop/QuietReady/server.js
-scp -i /Users/allantone/ssh/QuietReady2026.pem ubuntu@ec2-54-160-4-222.compute-1.amazonaws.com:/home/ubuntu/quietready/email.js ~/Desktop/QuietReady/email.js
-```
-Then commit and push those to get the repo back in sync.
+**IMPORTANT:** GitHub repo is now IN SYNC with the server as of Session 5. Always use deploy.sh going forward — do not edit server files directly via SSH.
 
 ---
 
@@ -88,8 +83,8 @@ Font stack: Georgia/serif for headings, Helvetica Neue/sans-serif for body.
   - `status` — `"preview"` | `"active"` | `"paused"` | `"cancelled"`
   - `billing_address` (jsonb), `shipping_address` (jsonb)
   - `stripe_payment_method_id`, `activated_at`
-  - `login_token` (text) — custom magic link token ← **added session 4**
-  - `login_token_expires_at` (timestamptz) ← **added session 4**
+  - `login_token` (text) — custom magic link token
+  - `login_token_expires_at` (timestamptz)
 - **household** — people counts (infants/children/teens/adults/seniors)
 - **pets** — pet type, count, size
 - **customer_preferences** — food philosophy, dietary restrictions, storage dimensions, budget, coverage months, container tier
@@ -103,7 +98,7 @@ Font stack: Georgia/serif for headings, Helvetica Neue/sans-serif for body.
 
 ---
 
-## Billing System (billing.quickready.ai)
+## Billing System (billing.quietready.ai)
 
 ### Architecture:
 - Separate Next.js frontend + Deno/Hono.js edge function
@@ -196,7 +191,7 @@ pm2 restart all --update-env
 ---
 
 ## Editing files on the server
-**Python3 is the most reliable way to edit files on the server** (sed fails on backticks/special chars, node scripts fail silently). Always use:
+**Python3 is the most reliable way to edit files** (sed fails on backticks/special chars). Always use:
 ```bash
 python3 << 'PYEOF'
 with open('server.js', 'r') as f:
@@ -211,8 +206,6 @@ PYEOF
 
 ## Supabase Auth Settings (IMPORTANT — set in dashboard)
 - **Confirm email: OFF** — Authentication → Providers → Email → "Confirm email" toggle must be OFF
-  - When ON, Supabase issues short-lived `signup` tokens instead of `magiclink` tokens
-  - We handle email confirmation ourselves via `updateUserById`
 - **Redirect URLs allowlist** — Authentication → URL Configuration → Redirect URLs:
   - `https://quietready.ai` ← must be present
   - `https://quietready.ai/auth/callback`
@@ -221,43 +214,44 @@ PYEOF
 
 ---
 
-## Magic Link Flow — Current State (Session 4 — INCOMPLETE/BROKEN)
+## Magic Link Flow — WORKING as of Session 5
 
-### What we built:
-Instead of using Supabase's `generateLink` directly (which gets consumed by Outlook/email scanners), we built a custom token system:
+### Complete flow (all working):
+1. Customer completes wizard → `POST /api/onboarding/submit` creates customer record
+2. Server generates `crypto.randomBytes(32)` token, stores in `customers.login_token` + `login_token_expires_at`
+3. Welcome email sent with link to `https://quietready.ai/api/auth/magic?token=xxx`
+4. `GET /api/auth/magic` — shows intermediate HTML page with "Enter My Portal →" button (blocks email scanners)
+5. `POST /api/auth/magic` — validates + invalidates token, calls `supabase.auth.admin.generateLink`, fetches action_link with `{redirect:'manual'}`, redirects browser to `location` header containing `#access_token=...`
+6. Frontend detects `#access_token` in URL hash → `POST /api/auth/exchange-token` → returns `sessionToken`
+7. Frontend shows "Create your password" screen with `sessionToken`
+8. `POST /api/auth/set-password` — calls `supabase.auth.getUser(token)` to verify, then `supabase.auth.admin.updateUserById(user.id, { password })`, then generates a **fresh** magic link and exchanges it for a new JWT to return as `accessToken` (old JWT is invalidated by password change)
+9. Fresh `accessToken` stored in `localStorage` as `qr_token`, portal loads via `GET /api/portal/dashboard`
 
-1. On signup, generate a `crypto.randomBytes(32)` token, store in `customers.login_token` + `customers.login_token_expires_at`
-2. Email link points to `https://quietready.ai/api/auth/magic?token=xxx`
-3. `GET /api/auth/magic` — shows an intermediate HTML page with "Enter My Portal →" button (prevents email scanners from consuming the token)
-4. `POST /api/auth/magic` — validates + invalidates the token, then tries to create a Supabase session
-
-### Current blocker:
-Step 4 (POST) is failing with `server_error`. We tried several approaches to get a Supabase session server-side:
-- `supabase.auth.admin.createSession()` — doesn't exist in this SDK version
-- POST to `/auth/v1/verify` — returns `validation_failed: Only email or phone should be provided`
-- POST to `/auth/v1/admin/users/{id}/token` — unknown, last attempt when session ended
-
-### What to try next session:
-The correct Supabase Admin API call to create a session for a user by ID is:
-```
-POST /auth/v1/admin/users/{user_id}/identities  (probably not this)
-```
-Actually the right approach is probably to use the Supabase JS client's **`supabase.auth.admin.generateLink`** to get the `action_link`, then make a server-side GET request to that URL and follow redirects, capturing the `#access_token=...` fragment from the final redirect URL.
-
-OR — simplest possible fix: just do a **server-side GET fetch** to the Supabase action_link URL and parse the redirect response headers to extract the tokens:
-```js
-const resp = await fetch(linkData.properties.action_link, { redirect: 'manual' });
-const location = resp.headers.get('location'); // will contain #access_token=...
-return res.redirect(303, location);
-```
-This should work because the Supabase verify URL returns a 302 to the redirectTo URL with the tokens in the hash. Our server follows it and passes the final redirect to the browser.
+### Auth endpoints in server.js:
+- `GET /api/auth/magic` — intermediate page (scanner protection)
+- `POST /api/auth/magic` — token exchange → Supabase session
+- `POST /api/auth/exchange-token` — Supabase JWT → sessionToken for localStorage
+- `POST /api/auth/set-password` — set password + return fresh JWT
+- `POST /api/auth/resend-magic-link` — resend for expired link screen
 
 ---
 
 ## Known Issues / Tech Debt
-- `trust proxy` not set → rate limiter throws ValidationError on every request (non-fatal but noisy). Fix: add `app.set('trust proxy', 1)` near top of server.js
-- GitHub repo is behind the live server — sync before using deploy.sh
-- Several Supabase users in auth table are unconfirmed/broken from failed test runs — these can be cleaned up in Supabase dashboard → Authentication → Users
+- Several Supabase users in auth table are unconfirmed/broken from failed test runs — clean up in Supabase dashboard → Authentication → Users
+- Portal dashboard loads but activation flow (preview → active) has NOT been end-to-end tested yet
+
+---
+
+## Next Session Priority: Activation Flow
+The portal loads for `status = "preview"` customers. Next step is to test and fix the full activation flow:
+
+1. Customer in portal clicks "Activate" / upgrade CTA
+2. `POST /api/onboarding/create-setup-intent` — creates Stripe SetupIntent, returns `clientSecret`
+3. Customer enters card via Stripe Elements + billing/shipping addresses
+4. `POST /api/onboarding/activate` — confirms payment method, creates billing template, sets `status = "active"`
+5. Portal unlocks full access (Months 2+ unblurred)
+
+Start next session by logging in as a preview customer and clicking through the activation flow, watching PM2 logs live to find where it breaks.
 
 ---
 
@@ -265,4 +259,5 @@ This should work because the Supabase verify URL returns a 302 to the redirectTo
 - Session 1 (2026-03-10): Explored live site, assessed wizard steps 1–9, identified missing checkout flow
 - Session 2 (2026-03-10): Reviewed full codebase, built preview portal flow: magic link → set password → gated portal → activation checkout with Stripe + addresses
 - Session 3 (2026-03-10): Set up Git, GitHub repo, EC2 Git integration, one-command deploy script
-- Session 4 (2026-03-11): Long debug session on magic link flow. Root causes found and fixed: (1) redirectTo was pointing to /portal, (2) duplicate sendWelcomeEmail calls, (3) Supabase "Confirm email" was ON causing signup tokens instead of magiclink tokens, (4) Outlook link scanner was pre-fetching and consuming Supabase OTP tokens. Built custom token system to work around scanner issue. POST /api/auth/magic successfully validates token and invalidates it but cannot yet create a Supabase session server-side. Next session: fix the server-side session creation using the `fetch(action_link, {redirect:'manual'})` approach described above.
+- Session 4 (2026-03-11): Long debug session on magic link flow. Built custom token system to defeat Outlook scanner. POST /api/auth/magic blocked on server-side session creation.
+- Session 5 (2026-03-12): Fixed entire auth flow end-to-end. Fixed blank page (missing ReactDOM render + export default). Fixed magic link session via fetch(action_link, {redirect:'manual'}). Built exchange-token, resend-magic-link endpoints. Fixed set-password to use admin client + return fresh JWT. Fixed trust proxy. Repo synced. Full flow working: wizard → email → magic link → set password → portal.
