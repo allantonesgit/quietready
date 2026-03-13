@@ -474,6 +474,7 @@ const styles = {
 
 const STEPS = [
   "household",
+  "caloricIntake",
   "dietary",
   "foodPhilosophy",
   "storage",
@@ -618,7 +619,7 @@ function StepHousehold({ data, setData }) {
 
   return (
     <div>
-      <div style={styles.stepLabel}>Step 1 of 9 — Your Household</div>
+      <div style={styles.stepLabel}>Step 1 of 10 — Your Household</div>
       <div style={styles.questionTitle}>Who are we feeding?</div>
       <div style={styles.questionSub}>
         Tell us about everyone in your household — people and pets. We'll calculate precise caloric and nutritional needs for every member of your family.
@@ -701,6 +702,222 @@ function StepHousehold({ data, setData }) {
   );
 }
 
+function StepCalories({ data, setData }) {
+  // USDA DRI defaults per person per day (kcal)
+  const USDA_DEFAULTS = {
+    children: 1400,
+    teens:    2000,
+    adults:   2200,
+    seniors:  1900,
+  };
+
+  const RANGES = {
+    children: { min: 800,  max: 2400, step: 50 },
+    teens:    { min: 1200, max: 3500, step: 50 },
+    adults:   { min: 1200, max: 4000, step: 50 },
+    seniors:  { min: 1000, max: 3000, step: 50 },
+  };
+
+  const LABELS = {
+    children: { label: "Children",  desc: "Ages 2–12",  icon: "🧒" },
+    teens:    { label: "Teens",     desc: "Ages 13–17", icon: "🧑" },
+    adults:   { label: "Adults",    desc: "Ages 18–64", icon: "👤" },
+    seniors:  { label: "Seniors",   desc: "Ages 65+",   icon: "🧓" },
+  };
+
+  // Initialize calories from saved data or USDA defaults
+  const getCalories = (key) => {
+    if (data.calories?.[key] !== undefined) return data.calories[key];
+    return USDA_DEFAULTS[key];
+  };
+
+  const setCalories = (key, val) => {
+    setData({ ...data, calories: { ...data.calories, [key]: val } });
+  };
+
+  const resetToDefaults = () => {
+    setData({ ...data, calories: { ...USDA_DEFAULTS } });
+  };
+
+  // Only show rows for categories that have people in them
+  const activeCategories = Object.keys(LABELS).filter(
+    (key) => (data.household?.[key] || 0) > 0
+  );
+
+  // Calculate total daily household calories (excluding infants)
+  const totalDailyCalories = activeCategories.reduce((sum, key) => {
+    const count = data.household?.[key] || 0;
+    return sum + count * getCalories(key);
+  }, 0);
+
+  const totalMonthlyCalories = totalDailyCalories * 30;
+
+  const isModified = activeCategories.some(
+    (key) => getCalories(key) !== USDA_DEFAULTS[key]
+  );
+
+  // Check if any defaults have been changed
+  const hasData = activeCategories.length > 0;
+
+  return (
+    <div>
+      <div style={styles.stepLabel}>Step 2 of 10 — Caloric Needs</div>
+      <div style={styles.questionTitle}>How much should each person eat?</div>
+      <div style={styles.questionSub}>
+        We've pre-filled USDA recommended daily calorie targets for each age group. Adjust if you know your household eats more or less than average — this directly affects how much food we source each month.
+      </div>
+
+      {/* Sliders */}
+      <div style={{ marginBottom: "28px" }}>
+        {activeCategories.length === 0 && (
+          <div style={{ padding: "24px", background: COLORS.white, border: `1px solid ${COLORS.mist}`, textAlign: "center", color: COLORS.stone, fontFamily: "'Helvetica Neue', sans-serif", fontSize: "14px" }}>
+            No household members added yet. Go back to Step 1 to add people.
+          </div>
+        )}
+
+        {activeCategories.map((key) => {
+          const count    = data.household?.[key] || 0;
+          const kcal     = getCalories(key);
+          const range    = RANGES[key];
+          const meta     = LABELS[key];
+          const isCustom = kcal !== USDA_DEFAULTS[key];
+          const pct      = ((kcal - range.min) / (range.max - range.min)) * 100;
+
+          return (
+            <div key={key} style={{
+              padding: "20px 0",
+              borderBottom: `1px solid ${COLORS.mist}`,
+            }}>
+              {/* Header row */}
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "14px" }}>
+                <div style={{ display: "flex", gap: "14px", alignItems: "center" }}>
+                  <span style={{ fontSize: "24px" }}>{meta.icon}</span>
+                  <div>
+                    <div style={{ fontWeight: "600", fontSize: "15px", fontFamily: "'Helvetica Neue', sans-serif" }}>
+                      {meta.label}
+                      <span style={{ fontWeight: "400", color: COLORS.stone, marginLeft: "8px" }}>
+                        × {count}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: "12px", color: COLORS.stone, fontFamily: "'Helvetica Neue', sans-serif" }}>{meta.desc}</div>
+                  </div>
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <div style={{ fontSize: "28px", fontWeight: "700", color: COLORS.moss, letterSpacing: "-1px", lineHeight: "1" }}>
+                    {kcal.toLocaleString()}
+                  </div>
+                  <div style={{ fontSize: "11px", color: COLORS.stone, fontFamily: "'Helvetica Neue', sans-serif", letterSpacing: "1px" }}>
+                    kcal / day
+                  </div>
+                  {isCustom && (
+                    <div style={{ fontSize: "10px", color: COLORS.clay, fontFamily: "'Helvetica Neue', sans-serif", marginTop: "2px", letterSpacing: "1px", textTransform: "uppercase" }}>
+                      Customized
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Slider */}
+              <input
+                type="range"
+                min={range.min}
+                max={range.max}
+                step={range.step}
+                value={kcal}
+                onChange={(e) => setCalories(key, parseInt(e.target.value))}
+                style={styles.slider}
+              />
+              <div style={styles.sliderRange}>
+                <span>{range.min.toLocaleString()} kcal</span>
+                <span style={{ color: COLORS.stone, fontSize: "10px", letterSpacing: "1px", textTransform: "uppercase" }}>
+                  USDA default: {USDA_DEFAULTS[key].toLocaleString()}
+                </span>
+                <span>{range.max.toLocaleString()} kcal</span>
+              </div>
+
+              {/* Per-group subtotal */}
+              <div style={{ marginTop: "8px", fontSize: "12px", color: COLORS.stone, fontFamily: "'Helvetica Neue', sans-serif" }}>
+                {count} {meta.label.toLowerCase()} × {kcal.toLocaleString()} = <strong style={{ color: COLORS.bark }}>{(count * kcal).toLocaleString()} kcal/day</strong> for this group
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Infants note */}
+      {(data.household?.infants || 0) > 0 && (
+        <div style={{
+          background: "#FDF5EE",
+          border: `1px solid #F0D9C4`,
+          padding: "14px 18px",
+          marginBottom: "20px",
+          fontFamily: "'Helvetica Neue', sans-serif",
+          fontSize: "13px",
+          color: COLORS.bark,
+          display: "flex",
+          gap: "10px",
+          alignItems: "flex-start",
+        }}>
+          <span style={{ flexShrink: 0 }}>👶</span>
+          <span>
+            <strong>{data.household.infants} infant{data.household.infants > 1 ? "s" : ""}</strong> in your household.
+            Infant nutrition (formula, breast milk, baby food) is handled separately and isn't included in the calorie slider above.
+            We'll account for infant supplies in your plan.
+          </span>
+        </div>
+      )}
+
+      {/* Household total summary */}
+      {hasData && totalDailyCalories > 0 && (
+        <div style={{
+          background: "#EDF2E8",
+          padding: "18px 20px",
+          fontFamily: "'Helvetica Neue', sans-serif",
+          marginBottom: "16px",
+        }}>
+          <div style={{ fontSize: "11px", letterSpacing: "3px", textTransform: "uppercase", color: COLORS.moss, marginBottom: "10px" }}>
+            Your household total
+          </div>
+          <div style={{ display: "flex", gap: "32px", flexWrap: "wrap" }}>
+            <div>
+              <div style={{ fontSize: "32px", fontWeight: "700", color: COLORS.moss, letterSpacing: "-1px" }}>
+                {totalDailyCalories.toLocaleString()}
+              </div>
+              <div style={{ fontSize: "12px", color: COLORS.stone, letterSpacing: "1px", textTransform: "uppercase" }}>kcal / day</div>
+            </div>
+            <div>
+              <div style={{ fontSize: "32px", fontWeight: "700", color: COLORS.bark, letterSpacing: "-1px" }}>
+                {(totalMonthlyCalories / 1000000).toFixed(2)}M
+              </div>
+              <div style={{ fontSize: "12px", color: COLORS.stone, letterSpacing: "1px", textTransform: "uppercase" }}>kcal / month</div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reset link */}
+      {isModified && (
+        <button
+          onClick={resetToDefaults}
+          style={{
+            background: "none",
+            border: "none",
+            color: COLORS.stone,
+            fontSize: "12px",
+            fontFamily: "'Helvetica Neue', sans-serif",
+            cursor: "pointer",
+            textDecoration: "underline",
+            padding: 0,
+            letterSpacing: "0.5px",
+          }}
+        >
+          Reset to USDA defaults
+        </button>
+      )}
+    </div>
+  );
+}
+
 function StepDietary({ data, setData }) {
   const restrictions = [
     { key: "vegetarian", label: "Vegetarian", icon: "🥦" },
@@ -722,7 +939,7 @@ function StepDietary({ data, setData }) {
 
   return (
     <div>
-      <div style={styles.stepLabel}>Step 2 of 8 — Dietary Needs</div>
+      <div style={styles.stepLabel}>Step 3 of 10 — Dietary Needs</div>
       <div style={styles.questionTitle}>Any dietary restrictions or allergies?</div>
       <div style={styles.questionSub}>Select all that apply. We'll filter every product recommendation to keep your household safe and comfortable.</div>
       <div style={styles.optionGrid}>
@@ -826,7 +1043,7 @@ function StepFoodPhilosophy({ data, setData }) {
 
   return (
     <div>
-      <div style={styles.stepLabel}>Step 3 of 9 — Food Philosophy</div>
+      <div style={styles.stepLabel}>Step 4 of 10 — Food Philosophy</div>
       <div style={styles.questionTitle}>How do you want to eat?</div>
       <div style={styles.questionSub}>
         Your food security plan should reflect how your family actually eats. We source real whole foods just as readily as packaged options — your values drive every purchasing decision.
@@ -1044,7 +1261,7 @@ function StepCoverageBudget({ data, setData }) {
 
   return (
     <div>
-      <div style={styles.stepLabel}>Step 5 of 8 — Coverage & Budget</div>
+      <div style={styles.stepLabel}>Step 6 of 10 — Coverage & Budget</div>
       <div style={styles.questionTitle}>Set your goal and pace.</div>
       <div style={styles.questionSub}>
         Drag both sliders — they talk to each other in real time. See exactly what your supply will cost and how long it takes to build.
@@ -1226,7 +1443,7 @@ function StepDuration({ data, setData }) {
 function StepStorage({ data, setData }) {
   return (
     <div>
-      <div style={styles.stepLabel}>Step 4 of 8 — Storage Space</div>
+      <div style={styles.stepLabel}>Step 5 of 10 — Storage Space</div>
       <div style={styles.questionTitle}>Tell us about your storage space.</div>
       <div style={styles.questionSub}>
         We'll design a container kit and organization map that fits perfectly within your available footprint.
@@ -1286,7 +1503,7 @@ function StepUtilities({ data, setData }) {
 
   return (
     <div>
-      <div style={styles.stepLabel}>Step 6 of 8 — Utilities & Cooking</div>
+      <div style={styles.stepLabel}>Step 7 of 10 — Utilities & Cooking</div>
       <div style={styles.questionTitle}>What utilities and cooking methods do you have access to?</div>
       <div style={styles.questionSub}>This helps us recommend foods that you can actually prepare in an emergency scenario. Select all that apply.</div>
       {items.map((item) => (
@@ -1347,7 +1564,7 @@ function StepEquipment({ data, setData }) {
 
   return (
     <div>
-      <div style={styles.stepLabel}>Step 7 of 8 — Equipment & Supplies</div>
+      <div style={styles.stepLabel}>Step 8 of 10 — Equipment & Supplies</div>
       <div style={styles.questionTitle}>Would you like to include any of these?</div>
       <div style={styles.questionSub}>We'll source everything from reputable suppliers and include it in your monthly plan. Check what you'd like included.</div>
       {categories.map((cat) => (
@@ -1524,7 +1741,7 @@ function StepContainers({ data, setData }) {
 
   return (
     <div style={{ position: "relative" }}>
-      <div style={styles.stepLabel}>Step 8 of 8 — Storage Containers</div>
+      <div style={styles.stepLabel}>Step 9 of 10 — Storage Containers</div>
       <div style={styles.questionTitle}>Choose your container system.</div>
       <div style={styles.questionSub}>
         All tiers use the same brand throughout — ensuring a uniform, stackable, airtight system.
@@ -2884,7 +3101,7 @@ function LandingPage({ onStart }) {
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: "24px" }}>
           {[
-            { step: "01", title: "Answer 8 questions", desc: "Tell us about your household, storage space, dietary needs, and budget." },
+            { step: "01", title: "Answer 10 questions", desc: "Tell us about your household, caloric needs, storage space, dietary needs, and budget." },
             { step: "02", title: "Review your plan", desc: "We build a precise, personalized food security plan for your family." },
             { step: "03", title: "We handle everything", desc: "We source, purchase, and coordinate delivery from trusted suppliers." },
             { step: "04", title: "Stay current automatically", desc: "We track expiry dates and rotate your supply on a smart monthly schedule." },
@@ -3034,6 +3251,7 @@ function App() {
   const renderStep = () => {
     switch (currentStep) {
       case "household": return <StepHousehold data={formData} setData={setFormData} />;
+      case "caloricIntake": return <StepCalories data={formData} setData={setFormData} />;
       case "dietary": return <StepDietary data={formData} setData={setFormData} />;
       case "foodPhilosophy": return <StepFoodPhilosophy data={formData} setData={setFormData} />;
       case "storage": return <StepStorage data={formData} setData={setFormData} />;
