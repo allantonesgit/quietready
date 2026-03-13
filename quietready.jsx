@@ -2632,6 +2632,370 @@ function ActivateModal({ customer, authToken, onActivated, onClose }) {
   );
 }
 
+// ── PlanTab ──────────────────────────────────────────────────────────────────
+function PlanTab({ customer, formData, isPreview, onActivate }) {
+  const [openMonth, setOpenMonth] = useState(isPreview ? null : 1);
+
+  const budget        = formData?.monthlyBudget  || 150;
+  const productBudget = budget - 30;
+  const months        = formData?.coverageMonths || 3;
+  const philosophy    = formData?.foodPhilosophy || "balanced";
+  const totalPeople   = Object.values(formData?.household || {})
+    .filter((_, k) => k !== "infants") // infants excluded from food calc
+    .reduce((s, v) => s + (typeof v === "number" ? v : 0), 0) || 2;
+  const costIndex     = formData?.costIndex || null;
+
+  const philosophyLabel = { wholeFood: "Whole Foods First", balanced: "Balanced Mix", freezeDried: "Freeze-Dried", noPreference: "Best Value" }[philosophy] || "Balanced Mix";
+  const containerLabel  = { good: "Essential", better: "Premium", best: "Professional" }[formData?.containerTier] || "Essential";
+
+  // ── Food plan per-month item list ──
+  const foodPlans = {
+    wholeFood: [
+      { item: "Whole wheat berries — sealed mylar", qty: n => `${n * 12} lbs`, cat: "Grains", estCost: n => n * 12 * 0.80 },
+      { item: "Organic brown & white rice",          qty: n => `${n * 10} lbs`, cat: "Grains", estCost: n => n * 10 * 0.70 },
+      { item: "Rolled oats & steel-cut oats",        qty: n => `${n * 6} lbs`,  cat: "Grains", estCost: n => n * 6 * 0.65 },
+      { item: "Canned wild-caught salmon",           qty: n => `${n * 8} cans`, cat: "Protein", estCost: n => n * 8 * 3.20 },
+      { item: "Canned chunk light tuna in water",    qty: n => `${n * 8} cans`, cat: "Protein", estCost: n => n * 8 * 1.20 },
+      { item: "Heirloom dried beans & lentils",      qty: n => `${n * 8} lbs`,  cat: "Protein", estCost: n => n * 8 * 1.10 },
+      { item: "Canned organic diced tomatoes",       qty: n => `${n * 10} cans`, cat: "Vegetables", estCost: n => n * 10 * 1.40 },
+      { item: "Dehydrated vegetables — additive-free", qty: n => `${n * 3} lbs`, cat: "Vegetables", estCost: n => n * 3 * 6.50 },
+      { item: "Dried fruits — raisins, dates, apricots", qty: n => `${n * 3} lbs`, cat: "Fruit", estCost: n => n * 3 * 3.50 },
+      { item: "Cold-pressed olive oil",              qty: n => `${n * 2} liters`, cat: "Fats", estCost: n => n * 2 * 8.00 },
+      { item: "Raw honey",                           qty: n => `${n * 2} lbs`,  cat: "Sweeteners", estCost: n => n * 2 * 6.00 },
+      { item: "Sea salt, herbs & spice kit",         qty: () => "1 kit",        cat: "Pantry", estCost: () => 18 },
+      { item: "Water (1 gal/person/day × 14 days)",  qty: n => `${n * 14} gal`, cat: "Water", estCost: n => n * 14 * 1.20 },
+    ],
+    balanced: [
+      { item: "Long-grain white rice",               qty: n => `${n * 12} lbs`, cat: "Grains", estCost: n => n * 12 * 0.60 },
+      { item: "Rolled oats",                         qty: n => `${n * 6} lbs`,  cat: "Grains", estCost: n => n * 6 * 0.65 },
+      { item: "Pasta — spaghetti, penne, rotini",    qty: n => `${n * 8} lbs`,  cat: "Grains", estCost: n => n * 8 * 1.20 },
+      { item: "Canned chunk light tuna in water",    qty: n => `${n * 10} cans`, cat: "Protein", estCost: n => n * 10 * 1.20 },
+      { item: "Canned chicken breast",               qty: n => `${n * 8} cans`, cat: "Protein", estCost: n => n * 8 * 2.80 },
+      { item: "Canned beef stew",                    qty: n => `${n * 4} cans`, cat: "Protein", estCost: n => n * 4 * 3.20 },
+      { item: "Dried lentils & split peas",          qty: n => `${n * 6} lbs`,  cat: "Protein", estCost: n => n * 6 * 1.10 },
+      { item: "Almond & peanut butter",              qty: n => `${n * 3} jars`, cat: "Protein", estCost: n => n * 3 * 4.50 },
+      { item: "Canned diced tomatoes & paste",       qty: n => `${n * 10} cans`, cat: "Vegetables", estCost: n => n * 10 * 1.40 },
+      { item: "Canned mixed vegetables",             qty: n => `${n * 6} cans`, cat: "Vegetables", estCost: n => n * 6 * 1.20 },
+      { item: "Canned soups — tomato, minestrone, chili", qty: n => `${n * 8} cans`, cat: "Ready Meals", estCost: n => n * 8 * 2.00 },
+      { item: "Canned peaches, pears & mandarins",   qty: n => `${n * 8} cans`, cat: "Fruit", estCost: n => n * 8 * 1.50 },
+      { item: "Evaporated milk (canned)",            qty: n => `${n * 6} cans`, cat: "Dairy", estCost: n => n * 6 * 1.80 },
+      { item: "Honey, sugar & brown sugar",          qty: n => `${n * 3} lbs`,  cat: "Sweeteners", estCost: n => n * 3 * 2.50 },
+      { item: "Salt, pepper, garlic powder, spice kit", qty: () => "1 kit",     cat: "Pantry", estCost: () => 14 },
+      { item: "Water (1 gal/person/day × 14 days)",  qty: n => `${n * 14} gal`, cat: "Water", estCost: n => n * 14 * 1.20 },
+    ],
+    freezeDried: [
+      { item: "Freeze-dried chicken & rice entrees", qty: n => `${n * 12} srv`, cat: "Entrees", estCost: n => n * 12 * 7.50 },
+      { item: "Freeze-dried pasta & meat sauce",     qty: n => `${n * 10} srv`, cat: "Entrees", estCost: n => n * 10 * 7.50 },
+      { item: "Freeze-dried beef stew",              qty: n => `${n * 8} srv`,  cat: "Entrees", estCost: n => n * 8 * 8.00 },
+      { item: "Canned chicken breast",               qty: n => `${n * 8} cans`, cat: "Protein", estCost: n => n * 8 * 2.80 },
+      { item: "Freeze-dried mixed vegetables",       qty: n => `${n * 6} cans`, cat: "Vegetables", estCost: n => n * 6 * 5.50 },
+      { item: "Instant rice & pasta",                qty: n => `${n * 8} pkts`, cat: "Grains", estCost: n => n * 8 * 2.20 },
+      { item: "Water (1 gal/person/day × 14 days)",  qty: n => `${n * 14} gal`, cat: "Water", estCost: n => n * 14 * 1.20 },
+    ],
+    noPreference: [
+      { item: "Long-grain white rice",               qty: n => `${n * 14} lbs`, cat: "Grains", estCost: n => n * 14 * 0.60 },
+      { item: "Canned chunk light tuna in water",    qty: n => `${n * 12} cans`, cat: "Protein", estCost: n => n * 12 * 1.20 },
+      { item: "Canned chicken breast",               qty: n => `${n * 10} cans`, cat: "Protein", estCost: n => n * 10 * 2.80 },
+      { item: "Dried lentils & split peas",          qty: n => `${n * 8} lbs`,  cat: "Protein", estCost: n => n * 8 * 1.10 },
+      { item: "Canned mixed vegetables",             qty: n => `${n * 8} cans`, cat: "Vegetables", estCost: n => n * 8 * 1.20 },
+      { item: "Canned soups (variety)",              qty: n => `${n * 8} cans`, cat: "Ready Meals", estCost: n => n * 8 * 2.00 },
+      { item: "Peanut butter",                       qty: n => `${n * 4} jars`, cat: "Protein", estCost: n => n * 4 * 4.00 },
+      { item: "Honey & sugar",                       qty: n => `${n * 2} lbs`,  cat: "Sweeteners", estCost: n => n * 2 * 2.50 },
+      { item: "Water (1 gal/person/day × 14 days)",  qty: n => `${n * 14} gal`, cat: "Water", estCost: n => n * 14 * 1.20 },
+    ],
+  };
+
+  const foodPlan   = foodPlans[philosophy] || foodPlans.balanced;
+  const monthCost  = foodPlan.reduce((s, item) => s + item.estCost(totalPeople), 0);
+
+  // How many fulfillment months needed at current budget
+  const totalFoodCost  = monthCost * months;
+  const fulfillMonths  = Math.ceil(totalFoodCost / productBudget);
+
+  // CBI-adjusted cost warning
+  const cbiPct    = costIndex?.cbiChangePct || 0;
+  const showCbiBanner = costIndex && Math.abs(cbiPct) >= 2;
+  const cbiUp     = cbiPct > 0;
+  const extraMonths = cbiUp ? Math.ceil((totalFoodCost * (cbiPct / 100)) / productBudget) : 0;
+  const budgetIncrease = cbiUp ? Math.ceil((totalFoodCost * (cbiPct / 100)) / fulfillMonths) : 0;
+
+  // Group items by category
+  const grouped = foodPlan.reduce((acc, item) => {
+    if (!acc[item.cat]) acc[item.cat] = [];
+    acc[item.cat].push(item);
+    return acc;
+  }, {});
+
+  // Build month list — Month 1 is always shown, rest locked in preview
+  const allMonths = Array.from({ length: fulfillMonths }, (_, i) => i + 1);
+
+  // Status of each month (fulfilled / in-progress / projected)
+  const getMonthStatus = (m) => {
+    // TODO: wire to real orders data — for now use placeholder logic
+    return "projected";
+  };
+
+  const statusColors = {
+    fulfilled:  { bg: "#EDF2E8", text: COLORS.moss, label: "✓ Fulfilled" },
+    "in-progress": { bg: "#FEF6ED", text: COLORS.clay, label: "⟳ In Progress" },
+    projected:  { bg: COLORS.cream, text: COLORS.stone, label: "Projected" },
+  };
+
+  const MonthRow = ({ monthNum, locked }) => {
+    const isOpen   = openMonth === monthNum;
+    const status   = getMonthStatus(monthNum);
+    const sc       = statusColors[status];
+
+    return (
+      <div style={{ border: `1px solid ${COLORS.mist}`, borderRadius: "10px", marginBottom: "8px", background: COLORS.white, overflow: "hidden" }}>
+        {/* Header row — always visible */}
+        <div
+          onClick={() => !locked && setOpenMonth(isOpen ? null : monthNum)}
+          style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", cursor: locked ? "default" : "pointer", userSelect: "none" }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
+            <div style={{ fontFamily: "'Helvetica Neue', sans-serif" }}>
+              <span style={{ fontSize: "13px", fontWeight: "700", color: COLORS.bark }}>Month {monthNum}</span>
+              {monthNum === 1 && <span style={{ fontSize: "11px", color: COLORS.moss, marginLeft: "8px", fontWeight: "600" }}>First Shipment</span>}
+              {monthNum === fulfillMonths && <span style={{ fontSize: "11px", color: COLORS.clay, marginLeft: "8px", fontWeight: "600" }}>Final Shipment</span>}
+            </div>
+            <span style={{ fontSize: "11px", background: sc.bg, color: sc.text, padding: "2px 10px", borderRadius: "20px", fontFamily: "'Helvetica Neue', sans-serif", fontWeight: "600" }}>
+              {sc.label}
+            </span>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
+            {!locked && (
+              <div style={{ textAlign: "right" }}>
+                <div style={{ fontSize: "14px", fontWeight: "700", color: COLORS.moss }}>${productBudget}</div>
+                <div style={{ fontSize: "10px", color: COLORS.stone, fontFamily: "'Helvetica Neue', sans-serif" }}>est. supply cost</div>
+              </div>
+            )}
+            {locked ? (
+              <span style={{ fontSize: "16px" }}>🔒</span>
+            ) : (
+              <span style={{ fontSize: "18px", color: COLORS.stone, transform: isOpen ? "rotate(180deg)" : "none", display: "inline-block", transition: "transform 0.2s" }}>⌄</span>
+            )}
+          </div>
+        </div>
+
+        {/* Expanded content */}
+        {isOpen && !locked && (
+          <div style={{ borderTop: `1px solid ${COLORS.mist}`, padding: "20px" }}>
+            {Object.entries(grouped).map(([cat, items]) => (
+              <div key={cat} style={{ marginBottom: "12px" }}>
+                <div style={{ fontSize: "10px", letterSpacing: "2.5px", textTransform: "uppercase", color: COLORS.stone, fontFamily: "'Helvetica Neue', sans-serif", paddingBottom: "4px", borderBottom: `1px dashed ${COLORS.mist}`, marginBottom: "4px" }}>{cat}</div>
+                {items.map((item, i) => (
+                  <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "5px 8px", borderBottom: `1px solid ${COLORS.cream}`, fontSize: "13px", fontFamily: "'Helvetica Neue', sans-serif" }}>
+                    <span style={{ color: COLORS.bark }}>{item.item}</span>
+                    <span style={{ fontWeight: "700", color: COLORS.moss, whiteSpace: "nowrap", marginLeft: "12px" }}>{item.qty(totalPeople)}</span>
+                  </div>
+                ))}
+              </div>
+            ))}
+            {status === "projected" && (
+              <div style={{ marginTop: "10px", fontSize: "11px", color: COLORS.stone, fontFamily: "'Helvetica Neue', sans-serif", fontStyle: "italic" }}>
+                * Quantities and items may adjust based on current pricing and availability at time of fulfillment.
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Locked overlay message */}
+        {locked && (
+          <div style={{ borderTop: `1px solid ${COLORS.mist}`, padding: "14px 20px", background: COLORS.cream, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div style={{ fontSize: "12px", color: COLORS.stone, fontFamily: "'Helvetica Neue', sans-serif" }}>
+              Activate your plan to see detailed items for all {fulfillMonths} months
+            </div>
+            <button onClick={onActivate} style={{ background: COLORS.moss, color: COLORS.white, border: "none", borderRadius: "6px", padding: "7px 16px", fontSize: "12px", fontWeight: "700", cursor: "pointer", fontFamily: "'Helvetica Neue', sans-serif", whiteSpace: "nowrap" }}>
+              Activate →
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <div>
+      {/* ── Summary cards ── */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: "10px", marginBottom: "28px" }}>
+        {[
+          { label: "Coverage Goal",    value: `${months} months`,    icon: "🎯" },
+          { label: "Household",        value: `${totalPeople} people`, icon: "👥" },
+          { label: "Food Philosophy",  value: philosophyLabel,        icon: "🌾" },
+          { label: "Monthly Budget",   value: `$${budget}/mo`,        icon: "💰" },
+          { label: "Fulfillment Time", value: `~${fulfillMonths} months`, icon: "📅" },
+          { label: "Container System", value: containerLabel,         icon: "📦" },
+        ].map(({ label, value, icon }) => (
+          <div key={label} style={{ background: COLORS.white, border: `1px solid ${COLORS.mist}`, borderRadius: "10px", padding: "14px 16px" }}>
+            <div style={{ fontSize: "18px", marginBottom: "5px" }}>{icon}</div>
+            <div style={{ fontSize: "10px", color: COLORS.stone, fontFamily: "'Helvetica Neue', sans-serif", letterSpacing: "0.5px", textTransform: "uppercase", marginBottom: "3px" }}>{label}</div>
+            <div style={{ fontSize: "14px", fontWeight: "700", color: COLORS.bark }}>{value}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* ── CBI cost-change banner (only shown when food costs have moved ≥2%) ── */}
+      {showCbiBanner && (
+        <div style={{ background: cbiUp ? "#FEF6ED" : "#EDF2E8", border: `1px solid ${cbiUp ? COLORS.clay : COLORS.sage}`, borderRadius: "10px", padding: "16px 20px", marginBottom: "20px", display: "flex", gap: "14px", alignItems: "flex-start" }}>
+          <span style={{ fontSize: "20px", flexShrink: 0 }}>{cbiUp ? "📈" : "📉"}</span>
+          <div style={{ fontFamily: "'Helvetica Neue', sans-serif" }}>
+            <div style={{ fontSize: "13px", fontWeight: "700", color: COLORS.bark, marginBottom: "4px" }}>
+              Food costs have {cbiUp ? "increased" : "decreased"} {Math.abs(cbiPct).toFixed(1)}% since you enrolled
+            </div>
+            <div style={{ fontSize: "13px", color: COLORS.stone, lineHeight: "1.6" }}>
+              {cbiUp
+                ? `At current prices, your fulfillment timeline may extend by ~${extraMonths} month${extraMonths !== 1 ? "s" : ""}. To stay on your original schedule, consider increasing your monthly budget by ~$${budgetIncrease}/mo.`
+                : `Good news — lower food prices mean your plan may complete slightly ahead of schedule.`
+              }
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Shipment schedule header ── */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "14px" }}>
+        <div>
+          <div style={{ fontSize: "11px", letterSpacing: "3px", textTransform: "uppercase", color: COLORS.clay, fontFamily: "'Helvetica Neue', sans-serif", marginBottom: "4px" }}>Shipment Schedule</div>
+          <div style={{ fontSize: "20px", fontWeight: "700", color: COLORS.bark, letterSpacing: "-0.5px" }}>
+            {fulfillMonths} monthly shipments · ${productBudget}/mo supply budget
+          </div>
+        </div>
+        {isPreview && (
+          <div style={{ fontSize: "11px", color: COLORS.stone, fontFamily: "'Helvetica Neue', sans-serif", textAlign: "right", maxWidth: "160px", lineHeight: "1.5" }}>
+            Month 1 visible<br />Months 2+ unlock on activation
+          </div>
+        )}
+      </div>
+
+      {/* ── Month accordion ── */}
+      {allMonths.map(m => (
+        <MonthRow
+          key={m}
+          monthNum={m}
+          locked={isPreview && m > 1}
+        />
+      ))}
+
+      {fulfillMonths > 6 && isPreview && (
+        <div style={{ textAlign: "center", padding: "12px", color: COLORS.stone, fontFamily: "'Helvetica Neue', sans-serif", fontSize: "13px" }}>
+          + {fulfillMonths - 2} more months in your plan — all unlock on activation
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── ContainerMapTab ───────────────────────────────────────────────────────────
+function ContainerMapTab({ customer, formData, isPreview }) {
+  const months      = formData?.coverageMonths || 3;
+  const philosophy  = formData?.foodPhilosophy || "balanced";
+  const containerTier = formData?.containerTier || "good";
+  const totalPeople = Object.values(formData?.household || {})
+    .reduce((s, v) => s + (typeof v === "number" ? v : 0), 0) || 2;
+
+  const containerLabel  = { good: "Essential", better: "Premium", best: "Professional" }[containerTier] || "Essential";
+  const containerVolume = { good: 0.57, better: 1.71, best: 2.05 }[containerTier] || 0.57;
+  const volPPM          = { wholeFood: 2.2, balanced: 1.9, freezeDried: 1.4, noPreference: 1.6 }[philosophy] || 1.9;
+  const totalVolume     = totalPeople * volPPM * months;
+  const containerCount  = Math.ceil(totalVolume / containerVolume);
+
+  // Category color map for container cards
+  const categoryColors = {
+    "Grains":      { bg: "#FDF9EE", accent: "#C4A84A" },
+    "Protein":     { bg: "#FDEEED", accent: "#C45A4A" },
+    "Vegetables":  { bg: "#EDF2E8", accent: "#4A5C3A" },
+    "Fruit":       { bg: "#FEF6ED", accent: "#C4773B" },
+    "Ready Meals": { bg: "#F0EEFA", accent: "#6B4AC4" },
+    "Dairy":       { bg: "#EDF6FD", accent: "#4A7EC4" },
+    "Fats":        { bg: "#FAFDED", accent: "#8A9A2A" },
+    "Sweeteners":  { bg: "#FEF6ED", accent: "#C4773B" },
+    "Pantry":      { bg: "#F5F2EE", accent: "#8C8278" },
+    "Water":       { bg: "#EDF6FD", accent: "#4A7EC4" },
+    "Entrees":     { bg: "#FDEEED", accent: "#C45A4A" },
+  };
+
+  // Assign food categories to containers (simplified even distribution)
+  const categories = {
+    wholeFood:    ["Grains", "Grains", "Protein", "Protein", "Vegetables", "Fruit", "Fats", "Pantry", "Water"],
+    balanced:     ["Grains", "Grains", "Protein", "Protein", "Vegetables", "Ready Meals", "Fruit", "Dairy", "Pantry", "Water"],
+    freezeDried:  ["Entrees", "Entrees", "Protein", "Vegetables", "Grains", "Water"],
+    noPreference: ["Grains", "Protein", "Protein", "Vegetables", "Ready Meals", "Pantry", "Water"],
+  };
+
+  const catList = categories[philosophy] || categories.balanced;
+
+  // Build container objects
+  const rows    = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
+  const containers = Array.from({ length: Math.min(containerCount, 48) }, (_, i) => {
+    const row  = rows[Math.floor(i / 4)];
+    const slot = (i % 4) + 1;
+    const cat  = catList[i % catList.length];
+    return { code: `${row}-${slot}`, category: cat, index: i };
+  });
+
+  // Detect if we have DB container data (post-activation)
+  const dbContainers = formData?.containers || [];
+  const useDbData    = dbContainers.length > 0;
+
+  return (
+    <div>
+      {/* Header */}
+      <div style={{ marginBottom: "24px" }}>
+        <div style={{ fontSize: "11px", letterSpacing: "3px", textTransform: "uppercase", color: COLORS.clay, marginBottom: "6px", fontFamily: "'Helvetica Neue', sans-serif" }}>Your Storage Map</div>
+        <div style={{ fontSize: "26px", fontWeight: "700", color: COLORS.bark, letterSpacing: "-0.8px", marginBottom: "6px" }}>
+          {containerCount} {containerLabel} containers
+        </div>
+        <div style={{ fontSize: "14px", color: COLORS.stone, fontFamily: "'Helvetica Neue', sans-serif" }}>
+          {totalPeople} people · {months} months coverage · {(totalVolume).toFixed(1)} cu ft total storage
+        </div>
+      </div>
+
+      {/* Category legend */}
+      <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginBottom: "20px" }}>
+        {[...new Set(catList)].map(cat => {
+          const colors = categoryColors[cat] || { bg: COLORS.cream, accent: COLORS.stone };
+          return (
+            <div key={cat} style={{ display: "flex", alignItems: "center", gap: "6px", background: colors.bg, border: `1px solid ${colors.accent}30`, borderRadius: "20px", padding: "3px 12px" }}>
+              <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: colors.accent, flexShrink: 0 }} />
+              <span style={{ fontSize: "11px", fontFamily: "'Helvetica Neue', sans-serif", color: COLORS.bark, fontWeight: "600" }}>{cat}</span>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Container grid */}
+      <div style={{ background: COLORS.white, border: `1px solid ${COLORS.mist}`, borderRadius: "12px", padding: "24px", marginBottom: "16px" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(90px, 1fr))", gap: "10px" }}>
+          {containers.map((c) => {
+            const colors = categoryColors[c.category] || { bg: COLORS.cream, accent: COLORS.stone };
+            return (
+              <div key={c.code} style={{ background: isPreview && c.index > 0 ? COLORS.cream : colors.bg, border: `1.5px solid ${isPreview && c.index > 0 ? COLORS.mist : colors.accent + "60"}`, borderRadius: "8px", padding: "10px 8px", textAlign: "center", position: "relative" }}>
+                <div style={{ fontSize: "13px", fontWeight: "700", color: COLORS.moss, fontFamily: "'Helvetica Neue', sans-serif" }}>{c.code}</div>
+                {isPreview && c.index > 0 ? (
+                  <div style={{ fontSize: "9px", color: COLORS.stone, fontFamily: "'Helvetica Neue', sans-serif", marginTop: "2px" }}>🔒 locked</div>
+                ) : (
+                  <div style={{ fontSize: "9px", color: colors.accent, fontFamily: "'Helvetica Neue', sans-serif", marginTop: "2px", fontWeight: "600" }}>{c.category}</div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Info footer */}
+      <div style={{ background: COLORS.white, border: `1px solid ${COLORS.mist}`, borderRadius: "10px", padding: "16px 20px" }}>
+        <div style={{ fontSize: "13px", color: COLORS.stone, fontFamily: "'Helvetica Neue', sans-serif", lineHeight: "1.7" }}>
+          {isPreview
+            ? "📋 Activate your plan to see exactly which products belong in each container. Every container gets a printed label and placement guide delivered with your first shipment."
+            : "📋 Each container is labeled with its contents. As shipments are confirmed, your portal updates with exact placement instructions for each item."
+          }
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Portal — main customer-facing portal ──────────────────────────────────────
 function Portal({ customer, formData, authToken, onActivated, onLogout }) {
   const [activeTab, setActiveTab] = useState("plan");
@@ -2790,121 +3154,24 @@ function Portal({ customer, formData, authToken, onActivated, onLogout }) {
 
         {/* ── Plan Tab ── */}
         {activeTab === "plan" && (
-          <div>
-            {/* Summary cards */}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: "12px", marginBottom: "32px" }}>
-              {[
-                { label: "Coverage Goal", value: `${months} months`, icon: "🎯" },
-                { label: "Household", value: `${totalPeople} people`, icon: "👥" },
-                { label: "Food Philosophy", value: philosophyLabel, icon: "🌾" },
-                { label: "Monthly Budget", value: `$${budget}/mo`, icon: "💰" },
-                { label: "Est. Completion", value: `~${Math.ceil(((totalPeople * 1.9 * months * 1.1) * 8) / productBudget)} months`, icon: "📅" },
-                { label: "Container System", value: containerLabel, icon: "📦" },
-              ].map(({ label, value, icon }) => (
-                <div key={label} style={{ background: COLORS.white, border: `1px solid ${COLORS.mist}`, borderRadius: "10px", padding: "16px 18px" }}>
-                  <div style={{ fontSize: "20px", marginBottom: "6px" }}>{icon}</div>
-                  <div style={{ fontSize: "11px", color: COLORS.stone, fontFamily: "'Helvetica Neue', sans-serif", letterSpacing: "0.5px", textTransform: "uppercase", marginBottom: "4px" }}>{label}</div>
-                  <div style={{ fontSize: "15px", fontWeight: "700", color: COLORS.bark, letterSpacing: "-0.3px" }}>{value}</div>
-                </div>
-              ))}
-            </div>
-
-            {/* Month 1 — ALWAYS VISIBLE */}
-            <div style={{ background: COLORS.white, border: `1px solid ${COLORS.mist}`, borderRadius: "12px", padding: "28px", marginBottom: "16px" }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "20px" }}>
-                <div>
-                  <div style={{ fontSize: "11px", letterSpacing: "3px", textTransform: "uppercase", color: COLORS.clay, marginBottom: "6px", fontFamily: "'Helvetica Neue', sans-serif" }}>Month 1 of {months}</div>
-                  <div style={{ fontSize: "22px", fontWeight: "700", color: COLORS.bark, letterSpacing: "-0.5px" }}>Your First Shipment</div>
-                </div>
-                <div style={{ background: "#EDF2E8", borderRadius: "8px", padding: "8px 14px", textAlign: "center" }}>
-                  <div style={{ fontSize: "11px", color: COLORS.moss, fontFamily: "'Helvetica Neue', sans-serif" }}>Budget</div>
-                  <div style={{ fontSize: "18px", fontWeight: "700", color: COLORS.moss }}>${productBudget}</div>
-                </div>
-              </div>
-              {Object.entries(grouped).map(([cat, items]) => (
-                <div key={cat} style={{ marginBottom: "4px" }}>
-                  <div style={{ fontSize: "10px", letterSpacing: "2.5px", textTransform: "uppercase", color: COLORS.stone, fontFamily: "'Helvetica Neue', sans-serif", padding: "8px 0 4px", borderBottom: `1px dashed ${COLORS.mist}`, marginBottom: "2px" }}>{cat}</div>
-                  {items.map((item, i) => (
-                    <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "7px 8px", borderBottom: `1px solid ${COLORS.cream}`, fontSize: "14px", fontFamily: "'Helvetica Neue', sans-serif" }}>
-                      <span style={{ color: COLORS.bark }}>{item.item}</span>
-                      <span style={{ fontWeight: "700", color: COLORS.moss, whiteSpace: "nowrap", marginLeft: "12px" }}>{item.qty}</span>
-                    </div>
-                  ))}
-                </div>
-              ))}
-            </div>
-
-            {/* Months 2+ — LOCKED in preview */}
-            {months > 1 && Array.from({ length: Math.min(months - 1, 3) }, (_, i) => i + 2).map(monthNum => (
-              <div key={monthNum} style={{ position: "relative", marginBottom: "12px" }}>
-                {/* Blurred content */}
-                <div style={{ background: COLORS.white, border: `1px solid ${COLORS.mist}`, borderRadius: "12px", padding: "28px", filter: isPreview ? "blur(4px)" : "none", userSelect: "none", pointerEvents: isPreview ? "none" : "auto" }}>
-                  <div style={{ fontSize: "11px", letterSpacing: "3px", textTransform: "uppercase", color: COLORS.clay, marginBottom: "6px", fontFamily: "'Helvetica Neue', sans-serif" }}>Month {monthNum} of {months}</div>
-                  <div style={{ fontSize: "22px", fontWeight: "700", color: COLORS.bark, marginBottom: "16px" }}>Shipment {monthNum}</div>
-                  {Object.keys(grouped).slice(0, 3).map(cat => (
-                    <div key={cat}>
-                      <div style={{ fontSize: "10px", letterSpacing: "2px", textTransform: "uppercase", color: COLORS.stone, fontFamily: "'Helvetica Neue', sans-serif", padding: "8px 0 4px", borderBottom: `1px dashed ${COLORS.mist}` }}>{cat}</div>
-                      {(grouped[cat] || []).slice(0, 3).map((item, i) => (
-                        <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "7px 8px", borderBottom: `1px solid ${COLORS.cream}`, fontSize: "14px", fontFamily: "'Helvetica Neue', sans-serif" }}>
-                          <span>{item.item}</span>
-                          <span style={{ fontWeight: "700", color: COLORS.moss }}>{item.qty}</span>
-                        </div>
-                      ))}
-                    </div>
-                  ))}
-                </div>
-                {/* Lock overlay */}
-                {isPreview && (
-                  <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", borderRadius: "12px", background: "rgba(247,243,237,0.6)" }}>
-                    <div style={{ fontSize: "28px", marginBottom: "10px" }}>🔒</div>
-                    <div style={{ fontSize: "16px", fontWeight: "700", color: COLORS.bark, marginBottom: "6px", letterSpacing: "-0.3px" }}>Month {monthNum} unlocks when you activate</div>
-                    <div style={{ fontSize: "13px", color: COLORS.stone, fontFamily: "'Helvetica Neue', sans-serif", marginBottom: "16px" }}>Your full {months}-month plan is ready and waiting</div>
-                    <button
-                      onClick={() => setShowActivate(true)}
-                      style={{ background: COLORS.moss, color: COLORS.white, border: "none", borderRadius: "8px", padding: "11px 22px", fontSize: "13px", fontWeight: "700", cursor: "pointer", fontFamily: "'Helvetica Neue', sans-serif" }}
-                    >
-                      Activate My Plan →
-                    </button>
-                  </div>
-                )}
-              </div>
-            ))}
-
-            {isPreview && months > 4 && (
-              <div style={{ textAlign: "center", padding: "20px", color: COLORS.stone, fontFamily: "'Helvetica Neue', sans-serif", fontSize: "13px" }}>
-                + {months - 4} more months in your plan — all unlock on activation
-              </div>
-            )}
-          </div>
+          <PlanTab
+            customer={customer}
+            formData={formData}
+            isPreview={isPreview}
+            onActivate={() => setShowActivate(true)}
+          />
         )}
 
         {/* ── Container Map Tab ── */}
         {activeTab === "containers" && (
-          <div>
-            <div style={{ marginBottom: "24px" }}>
-              <div style={{ fontSize: "11px", letterSpacing: "3px", textTransform: "uppercase", color: COLORS.clay, marginBottom: "8px", fontFamily: "'Helvetica Neue', sans-serif" }}>Your Storage Map</div>
-              <div style={{ fontSize: "28px", fontWeight: "700", color: COLORS.bark, letterSpacing: "-0.8px", marginBottom: "8px" }}>~{containerCount} containers</div>
-              <div style={{ fontSize: "14px", color: COLORS.stone, fontFamily: "'Helvetica Neue', sans-serif" }}>
-                {containerLabel} tier · {totalPeople} people · {months} months coverage
-              </div>
-            </div>
-            <div style={{ background: COLORS.white, border: `1px solid ${COLORS.mist}`, borderRadius: "12px", padding: "28px", marginBottom: "16px" }}>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(72px, 1fr))", gap: "10px" }}>
-                {containers.map((c, i) => (
-                  <div key={i} style={{ background: COLORS.cream, border: `1px solid ${COLORS.mist}`, borderRadius: "6px", padding: "10px 8px", textAlign: "center" }}>
-                    <div style={{ fontSize: "13px", fontWeight: "700", color: COLORS.moss, fontFamily: "'Helvetica Neue', sans-serif" }}>{c.code}</div>
-                    <div style={{ fontSize: "10px", color: COLORS.stone, fontFamily: "'Helvetica Neue', sans-serif", marginTop: "2px" }}>{containerLabel}</div>
-                  </div>
-                ))}
-              </div>
-              <div style={{ marginTop: "20px", padding: "14px 18px", background: COLORS.cream, borderRadius: "8px", fontSize: "13px", color: COLORS.stone, fontFamily: "'Helvetica Neue', sans-serif", lineHeight: "1.6" }}>
-                📋 When your plan activates, each container gets a printed label and your portal shows exactly which items go in which container — updated with every shipment.
-              </div>
-            </div>
-          </div>
+          <ContainerMapTab
+            customer={customer}
+            formData={formData}
+            isPreview={isPreview}
+          />
         )}
 
-        {/* ── Billing Tab ── */}
+                {/* ── Billing Tab ── */}
         {activeTab === "billing" && (
           <div>
             <div style={{ background: COLORS.white, border: `1px solid ${COLORS.mist}`, borderRadius: "12px", padding: "28px", marginBottom: "16px" }}>
@@ -3190,6 +3457,9 @@ function App() {
         foodPhilosophy: prefs.food_philosophy,
         containerTier:  prefs.container_tier,
         household:      data.household || {},
+        containers:     data.containers || [],
+        costIndex:      data.costIndex  || null,
+        preferences:    prefs,
       });
       setScreen("portal");
     } catch (err) {
@@ -3204,7 +3474,7 @@ function App() {
     setScreen("landing");
   };
 
-  const steps = ["household", "dietary", "foodPhilosophy", "storage", "coverageBudget", "utilities", "equipment", "containers", "plan", "success"];
+  const steps = STEPS; // defined at top of file
   const currentStep = steps[stepIndex];
   const progress = ((stepIndex) / (steps.length - 2)) * 100;
 
