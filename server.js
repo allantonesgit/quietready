@@ -217,6 +217,9 @@ app.post("/api/onboarding/submit", async (req, res) => {
     }
 
     // 6. Preferences
+    // USDA DRI defaults (kcal/day per person) — used if customer didn't adjust
+    const USDA_DEFAULTS = { children: 1400, teens: 2000, adults: 2200, seniors: 1900 };
+    const cal = formData.calories || {};
     await supabase.from("customer_preferences").insert({
       customer_id:          customerId,
       food_philosophy:      formData.foodPhilosophy   || "balanced",
@@ -233,6 +236,11 @@ app.post("/api/onboarding/submit", async (req, res) => {
       utilities:            formData.utilities        || {},
       equipment:            formData.equipment        || {},
       container_tier:       formData.containerTier    || "good",
+      // Caloric targets — from Step 2 of wizard, falling back to USDA DRI defaults
+      calories_children:    cal.children ?? USDA_DEFAULTS.children,
+      calories_teens:       cal.teens    ?? USDA_DEFAULTS.teens,
+      calories_adults:      cal.adults   ?? USDA_DEFAULTS.adults,
+      calories_seniors:     cal.seniors  ?? USDA_DEFAULTS.seniors,
     });
 
     // 7. Generate container assignments
@@ -640,7 +648,17 @@ app.post("/api/onboarding/activate", requireAuth, async (req, res) => {
     const firstBillingDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
     await createBillingTemplate(billingCustomerId, firstBillingDate);
 
-    // Upgrade customer status to active + save addresses
+    // Snapshot current CBI at activation time.
+    // Falls back to 100.0 (launch baseline) until the daily price-fetch job is running.
+    const { data: latestBasis } = await supabase
+      .from("price_basis")
+      .select("cbi_value")
+      .order("basis_date", { ascending: false })
+      .limit(1)
+      .single();
+    const cbiAtActivation = latestBasis?.cbi_value ?? 100.0;
+
+    // Upgrade customer status to active + save addresses + lock CBI
     const { data: updatedCustomer, error: updateErr } = await supabase
       .from("customers")
       .update({
@@ -651,6 +669,8 @@ app.post("/api/onboarding/activate", requireAuth, async (req, res) => {
         billing_address:           billingAddress,
         shipping_address:          shippingAddress,
         activated_at:              new Date().toISOString(),
+        personal_cbi:              cbiAtActivation,
+        cbi_locked_at:             new Date().toISOString(),
       })
       .eq("id", customer.id)
       .select()
@@ -679,7 +699,7 @@ app.post("/api/onboarding/activate", requireAuth, async (req, res) => {
 app.get("/api/portal/dashboard", requireAuth, async (req, res) => {
   const cid = req.customer.id;
 
-  const [prefs, household, pets, inventory, orders, instructions, pdfs] = await Promise.all([
+  const [prefs, household, pets, inventory, orders, instructions, pdfs, latestBasis] = await Promise.all([
     supabase.from("customer_preferences").select("*").eq("customer_id", cid).single(),
     supabase.from("household").select("*").eq("customer_id", cid).single(),
     supabase.from("pets").select("*").eq("customer_id", cid),
@@ -687,7 +707,13 @@ app.get("/api/portal/dashboard", requireAuth, async (req, res) => {
     supabase.from("orders").select("*").eq("customer_id", cid).order("created_at", { ascending: false }).limit(6),
     supabase.from("shipment_instructions").select("*").eq("customer_id", cid).eq("is_acknowledged", false).order("created_at", { ascending: false }),
     supabase.from("customer_pdfs").select("*").eq("customer_id", cid).eq("is_current", true),
+    supabase.from("price_basis").select("basis_date, cbi_value").order("basis_date", { ascending: false }).limit(1).single(),
   ]);
+
+  // CBI delta: how much have food costs changed since this customer activated?
+  const personalCbi  = req.customer.personal_cbi  ?? 100.0;
+  const currentCbi   = latestBasis.data?.cbi_value ?? 100.0;
+  const cbiChangePct = parseFloat((((currentCbi - personalCbi) / personalCbi) * 100).toFixed(2));
 
   res.json({
     customer:     req.customer,
@@ -698,6 +724,12 @@ app.get("/api/portal/dashboard", requireAuth, async (req, res) => {
     orders:       orders.data,
     pendingInstructions: instructions.data,
     pdfs:         pdfs.data,
+    costIndex: {
+      personalCbi,
+      currentCbi,
+      cbiChangePct,   // positive = more expensive, negative = cheaper
+      basisDate:      latestBasis.data?.basis_date ?? null,
+    },
   });
 });
 
