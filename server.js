@@ -1105,11 +1105,15 @@ async function fetchKrogerPrice(token, searchTerm, locationId) {
   const product = data?.data?.[0];
   if (!product) throw new Error(`No product found for "${searchTerm}"`);
 
-  // Price: prefer promo price, fall back to regular price
+  // Price: walk all items to find any with a price (location-specific may be undefined)
   // Kroger returns price as { regular: 10.49, promo: 8.99 } (numbers, not objects)
-  const priceInfo = product.items?.[0]?.price;
-  const price     = priceInfo?.promo || priceInfo?.regular;
-  if (!price || typeof price !== "number") throw new Error(`No price returned for "${searchTerm}" — got: ${JSON.stringify(priceInfo)}`);
+  let price = null;
+  for (const item of (product.items || [])) {
+    const p = item?.price;
+    if (p?.promo && typeof p.promo === "number")   { price = p.promo;   break; }
+    if (p?.regular && typeof p.regular === "number") { price = p.regular; break; }
+  }
+  if (!price) throw new Error(`No price returned for "${searchTerm}" — items: ${JSON.stringify(product.items?.map(i => i?.price))}`);
 
   return {
     name:        product.description,
@@ -1121,27 +1125,28 @@ async function fetchKrogerPrice(token, searchTerm, locationId) {
 }
 
 // ── Index basket definition ──
-// Each entry: searchTerm, gramsPerUnit (for cost_per_calorie calc), caloriesPerGram
+// Search terms kept simple — no decimals, no slashes (Kroger API returns 400 on those)
+// grams = net weight of the target package size used for cost_per_calorie calc
 const INDEX_BASKET = [
   // Grains
-  { searchTerm: "white rice 5 lb",        grams: 2268, calPerGram: 3.63, category: "Grains",      weight: 1.5 },
-  { searchTerm: "rolled oats 18 oz",       grams: 510,  calPerGram: 3.78, category: "Grains",      weight: 1.0 },
+  { searchTerm: "white rice 5 lb",         grams: 2268, calPerGram: 3.63, category: "Grains",      weight: 1.5 },
+  { searchTerm: "quaker rolled oats",       grams: 510,  calPerGram: 3.78, category: "Grains",      weight: 1.0 },
   // Protein
-  { searchTerm: "canned tuna 5 oz",        grams: 142,  calPerGram: 1.16, category: "Protein",     weight: 1.5 },
-  { searchTerm: "canned chicken 12.5 oz",  grams: 354,  calPerGram: 1.39, category: "Protein",     weight: 1.5 },
-  { searchTerm: "dried lentils 1 lb",      grams: 454,  calPerGram: 3.53, category: "Protein",     weight: 1.0 },
+  { searchTerm: "starkist chunk light tuna",grams: 142,  calPerGram: 1.16, category: "Protein",     weight: 1.5 },
+  { searchTerm: "swanson canned chicken",   grams: 354,  calPerGram: 1.39, category: "Protein",     weight: 1.5 },
+  { searchTerm: "dried lentils 1 lb",       grams: 454,  calPerGram: 3.53, category: "Protein",     weight: 1.0 },
   // Vegetables
-  { searchTerm: "canned diced tomatoes 14.5 oz", grams: 411, calPerGram: 0.24, category: "Vegetables", weight: 1.0 },
-  { searchTerm: "canned mixed vegetables 15 oz", grams: 425, calPerGram: 0.42, category: "Vegetables", weight: 1.0 },
+  { searchTerm: "hunt diced tomatoes",      grams: 411,  calPerGram: 0.24, category: "Vegetables",  weight: 1.0 },
+  { searchTerm: "mixed vegetables canned",  grams: 425,  calPerGram: 0.42, category: "Vegetables",  weight: 1.0 },
   // Ready meals
-  { searchTerm: "canned soup 18.8 oz",     grams: 533,  calPerGram: 0.56, category: "Ready Meals", weight: 0.75 },
+  { searchTerm: "campbells chicken noodle soup", grams: 533, calPerGram: 0.56, category: "Ready Meals", weight: 0.75 },
   // Fats
-  { searchTerm: "peanut butter 16 oz",     grams: 454,  calPerGram: 5.88, category: "Fats",        weight: 1.0 },
-  { searchTerm: "olive oil 16.9 oz",       grams: 500,  calPerGram: 8.84, category: "Fats",        weight: 0.75 },
+  { searchTerm: "jif peanut butter 16 oz",  grams: 454,  calPerGram: 5.88, category: "Fats",        weight: 1.0 },
+  { searchTerm: "kroger olive oil",         grams: 500,  calPerGram: 8.84, category: "Fats",        weight: 0.75 },
   // Fruit
-  { searchTerm: "canned peaches 15 oz",    grams: 425,  calPerGram: 0.55, category: "Fruit",       weight: 0.75 },
+  { searchTerm: "dole canned peaches",      grams: 425,  calPerGram: 0.55, category: "Fruit",       weight: 0.75 },
   // Dairy
-  { searchTerm: "evaporated milk 12 oz",   grams: 340,  calPerGram: 1.35, category: "Dairy",       weight: 0.75 },
+  { searchTerm: "carnation evaporated milk",grams: 354,  calPerGram: 1.35, category: "Dairy",       weight: 0.75 },
 ];
 
 // ── Kroger index store (representative suburban US location) ──
