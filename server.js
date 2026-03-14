@@ -13,6 +13,10 @@
 //   FRESHBOOKS_ACCOUNT_ID
 //   PDF_SCRIPT_PATH      — absolute path to generate_recipe_pdf.py
 //   PORT                 — default 3001
+//   KROGER_CLIENT_ID     — from developer.kroger.com (Products API)
+//   KROGER_CLIENT_SECRET — from developer.kroger.com
+//   KROGER_LOCATION_ID   — optional, defaults to 70100034 (Columbus OH suburban)
+//   CBI_REFRESH_SECRET   — shared secret header for EasyCron → /api/admin/cbi/refresh
 // ============================================================
 
 import crypto          from "crypto";
@@ -1047,6 +1051,217 @@ app.post("/api/webhooks/stripe", async (req, res) => {
   res.json({ received: true });
 });
 
+
+// ============================================================
+// CBI REFRESH — Daily Cost Basis Index update
+// POST /api/admin/cbi/refresh
+// Called by EasyCron daily at 3am UTC.
+// Protected by Authorization: Bearer {CBI_REFRESH_SECRET}.
+// Fetches live prices for 12 index products from Kroger API,
+// calculates cost_per_calorie, stores in price_basis table.
+// ============================================================
+
+// ── Kroger OAuth2 token (cached in memory, expires in 30 min) ──
+let krogerTokenCache = { token: null, expiresAt: 0 };
+
+async function getKrogerToken() {
+  if (krogerTokenCache.token && Date.now() < krogerTokenCache.expiresAt) {
+    return krogerTokenCache.token;
+  }
+  const creds = Buffer.from(
+    `${process.env.KROGER_CLIENT_ID}:${process.env.KROGER_CLIENT_SECRET}`
+  ).toString("base64");
+
+  const res = await fetch("https://api.kroger.com/v1/connect/oauth2/token", {
+    method: "POST",
+    headers: {
+      "Content-Type":  "application/x-www-form-urlencoded",
+      "Authorization": `Basic ${creds}`,
+    },
+    body: "grant_type=client_credentials&scope=product.compact",
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Kroger auth failed: ${res.status} ${text}`);
+  }
+
+  const data = await res.json();
+  krogerTokenCache = {
+    token:     data.access_token,
+    expiresAt: Date.now() + (data.expires_in - 60) * 1000, // 60s buffer
+  };
+  return krogerTokenCache.token;
+}
+
+// ── Fetch price for one index product from Kroger ──
+async function fetchKrogerPrice(token, searchTerm, locationId) {
+  const url = `https://api.kroger.com/v1/products?filter.term=${encodeURIComponent(searchTerm)}&filter.locationId=${locationId}&filter.limit=1`;
+  const res = await fetch(url, {
+    headers: { "Authorization": `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error(`Kroger product fetch failed for "${searchTerm}": ${res.status}`);
+  const data = await res.json();
+  const product = data?.data?.[0];
+  if (!product) throw new Error(`No product found for "${searchTerm}"`);
+
+  // Price: prefer promo price, fall back to regular price
+  const priceInfo = product.items?.[0]?.price;
+  const price     = priceInfo?.promo || priceInfo?.regular;
+  if (!price) throw new Error(`No price returned for "${searchTerm}"`);
+
+  return {
+    name:        product.description,
+    price:       parseFloat(price),
+    size:        product.items?.[0]?.size || "unknown",
+    upc:         product.upc,
+    searchTerm,
+  };
+}
+
+// ── Index basket definition ──
+// Each entry: searchTerm, gramsPerUnit (for cost_per_calorie calc), caloriesPerGram
+const INDEX_BASKET = [
+  // Grains
+  { searchTerm: "white rice 5 lb",        grams: 2268, calPerGram: 3.63, category: "Grains",      weight: 1.5 },
+  { searchTerm: "rolled oats 18 oz",       grams: 510,  calPerGram: 3.78, category: "Grains",      weight: 1.0 },
+  // Protein
+  { searchTerm: "canned tuna 5 oz",        grams: 142,  calPerGram: 1.16, category: "Protein",     weight: 1.5 },
+  { searchTerm: "canned chicken 12.5 oz",  grams: 354,  calPerGram: 1.39, category: "Protein",     weight: 1.5 },
+  { searchTerm: "dried lentils 1 lb",      grams: 454,  calPerGram: 3.53, category: "Protein",     weight: 1.0 },
+  // Vegetables
+  { searchTerm: "canned diced tomatoes 14.5 oz", grams: 411, calPerGram: 0.24, category: "Vegetables", weight: 1.0 },
+  { searchTerm: "canned mixed vegetables 15 oz", grams: 425, calPerGram: 0.42, category: "Vegetables", weight: 1.0 },
+  // Ready meals
+  { searchTerm: "canned soup 18.8 oz",     grams: 533,  calPerGram: 0.56, category: "Ready Meals", weight: 0.75 },
+  // Fats
+  { searchTerm: "peanut butter 16 oz",     grams: 454,  calPerGram: 5.88, category: "Fats",        weight: 1.0 },
+  { searchTerm: "olive oil 16.9 oz",       grams: 500,  calPerGram: 8.84, category: "Fats",        weight: 0.75 },
+  // Fruit
+  { searchTerm: "canned peaches 15 oz",    grams: 425,  calPerGram: 0.55, category: "Fruit",       weight: 0.75 },
+  // Dairy
+  { searchTerm: "evaporated milk 12 oz",   grams: 340,  calPerGram: 1.35, category: "Dairy",       weight: 0.75 },
+];
+
+// ── Kroger index store (representative suburban US location) ──
+// locationId 70100034 = Kroger Columbus OH — standard suburban store, good price rep
+const KROGER_LOCATION_ID = process.env.KROGER_LOCATION_ID || "70100034";
+
+app.post("/api/admin/cbi/refresh", async (req, res) => {
+  // Verify EasyCron shared secret
+  const authHeader = req.headers.authorization || "";
+  const secret     = authHeader.replace("Bearer ", "").trim();
+  if (!secret || secret !== process.env.CBI_REFRESH_SECRET) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  try {
+    const token    = await getKrogerToken();
+    const today    = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
+    const results  = [];
+    const errors   = [];
+
+    // Fetch price for each index product
+    for (const item of INDEX_BASKET) {
+      try {
+        const priceData = await fetchKrogerPrice(token, item.searchTerm, KROGER_LOCATION_ID);
+        const costPerCalorie = priceData.price / (item.grams * item.calPerGram);
+        results.push({
+          ...item,
+          ...priceData,
+          costPerCalorie: parseFloat(costPerCalorie.toFixed(6)),
+        });
+      } catch (err) {
+        console.warn(`CBI: skipping "${item.searchTerm}": ${err.message}`);
+        errors.push({ searchTerm: item.searchTerm, error: err.message });
+      }
+    }
+
+    if (results.length < 6) {
+      throw new Error(`Too few products priced (${results.length}/12) — aborting CBI update`);
+    }
+
+    // Weighted average cost_per_calorie across all successfully priced items
+    const totalWeight      = results.reduce((s, r) => s + r.weight, 0);
+    const weightedCpcSum   = results.reduce((s, r) => s + r.costPerCalorie * r.weight, 0);
+    const todayCpc         = weightedCpcSum / totalWeight;
+
+    // Get launch baseline CPC from first ever price_basis row
+    const { data: baseline } = await supabase
+      .from("price_basis")
+      .select("cbi_value, raw_prices")
+      .order("basis_date", { ascending: true })
+      .limit(1)
+      .single();
+
+    // If baseline raw_prices has a stored launch_cpc use it, else treat today as baseline (100.0)
+    const launchCpc = baseline?.raw_prices?.launch_cpc ?? todayCpc;
+    const cbiValue  = parseFloat(((todayCpc / launchCpc) * 100).toFixed(4));
+
+    // Build raw_prices blob
+    const rawPrices = {
+      launch_cpc:      launchCpc,
+      today_cpc:       parseFloat(todayCpc.toFixed(6)),
+      location_id:     KROGER_LOCATION_ID,
+      products:        results.map(r => ({
+        searchTerm:    r.searchTerm,
+        name:          r.name,
+        price:         r.price,
+        size:          r.size,
+        category:      r.category,
+        costPerCalorie: r.costPerCalorie,
+        weight:        r.weight,
+      })),
+      errors,
+      fetched_at: new Date().toISOString(),
+    };
+
+    // Upsert today's row (safe to re-run multiple times)
+    const { error: upsertErr } = await supabase
+      .from("price_basis")
+      .upsert({ basis_date: today, cbi_value: cbiValue, raw_prices: rawPrices },
+               { onConflict: "basis_date" });
+
+    if (upsertErr) throw new Error(`price_basis upsert failed: ${upsertErr.message}`);
+
+    // If this is the very first real run, backfill launch_cpc into the baseline row
+    if (!baseline?.raw_prices?.launch_cpc) {
+      await supabase
+        .from("price_basis")
+        .update({ raw_prices: { ...rawPrices, launch_cpc: todayCpc } })
+        .eq("basis_date", today);
+    }
+
+    console.log(`✅ CBI refresh: ${today} CBI=${cbiValue} (cpc=${todayCpc.toFixed(6)}) products=${results.length}`);
+
+    res.json({
+      success:       true,
+      date:          today,
+      cbi:           cbiValue,
+      todayCpc:      parseFloat(todayCpc.toFixed(6)),
+      launchCpc:     parseFloat(launchCpc.toFixed(6)),
+      productsFetched: results.length,
+      errors:        errors.length,
+      summary:       results.map(r => ({ category: r.category, searchTerm: r.searchTerm, price: r.price, costPerCalorie: r.costPerCalorie })),
+    });
+
+  } catch (err) {
+    console.error("CBI refresh error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/admin/cbi/latest — returns last 30 days of CBI for admin dashboard
+app.get("/api/admin/cbi/latest", requireAdmin, async (req, res) => {
+  const { data, error } = await supabase
+    .from("price_basis")
+    .select("basis_date, cbi_value, raw_prices")
+    .order("basis_date", { ascending: false })
+    .limit(30);
+
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data);
+});
 
 // ============================================================
 // HEALTH CHECK
