@@ -3618,9 +3618,21 @@ function App() {
               <div style={styles.logoTagline}>Smart Pantry. Peace of Mind.</div>
             </div>
           </div>
-          <button style={{ ...styles.ctaButton, padding: "10px 24px", fontSize: "12px" }} onClick={() => setScreen("questionnaire")}>
-            Get Started
-          </button>
+          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+            <button
+              onClick={() => {
+                const saved = localStorage.getItem("qr_token");
+                if (saved) { setAuthToken(saved); loadPortal(saved); }
+                else setScreen("linkerror");
+              }}
+              style={{ background: "none", border: `1px solid ${COLORS.mist}`, padding: "9px 20px", fontSize: "12px", letterSpacing: "1px", color: COLORS.stone, cursor: "pointer", fontFamily: "'Helvetica Neue', sans-serif", fontWeight: "500" }}
+            >
+              Log In
+            </button>
+            <button style={{ ...styles.ctaButton, padding: "10px 24px", fontSize: "12px" }} onClick={() => setScreen("questionnaire")}>
+              Get Started
+            </button>
+          </div>
         </nav>
         <LandingPage onStart={() => setScreen("questionnaire")} />
       </div>
