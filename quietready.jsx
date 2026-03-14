@@ -2828,71 +2828,89 @@ function PlanTab({ customer, formData, isPreview, onActivate }) {
   const totalFoodCost = monthCost * months;
   const fulfillMonths = Math.ceil(totalFoodCost / productBudget);
 
-  // ── Food plan item list — quantities derived from calorie allocation ──
-  // Each category gets a % of total monthly calories, converted to practical units.
-  // Quantities scale with actual household calorie needs, not hardcoded per-person.
-  const grainLbs     = Math.round(monthlyCalories * 0.40 / (3500 * totalPeople) * totalPeople * 10);
-  const proteinCans  = Math.round(monthlyCalories * 0.25 / 200 / totalPeople * totalPeople);
-  const lentilLbs    = Math.round(monthlyCalories * 0.10 / (1600 * totalPeople) * totalPeople * 4);
-  const vegCans      = Math.round(monthlyCalories * 0.10 / 40 / totalPeople * totalPeople);
-  const fruitCans    = Math.round(monthlyCalories * 0.05 / 60 / totalPeople * totalPeople);
-  const fatUnits     = Math.round(totalPeople * 1.5);
-  const dairyCans    = Math.round(totalPeople * 3);
-  const waterGal     = totalPeople * 14;
+  // ── Food plan quantities ─────────────────────────────────────
+  // HIGH-CALORIE items (grains, fats, legumes): sized from calorie targets
+  // LOW-CALORIE items (veg, fruit, dairy): fixed practical per-person amounts
+  //
+  // Grains supply ~40% of calories. 1 lb dry grain ≈ 1,600 kcal.
+  const grainKcal    = monthlyCalories * 0.40;
+  const grainLbsTotal = Math.round(grainKcal / 1600);
+
+  // Protein cans: canned meat ~200 kcal/can, supplies ~20% of calories
+  const proteinKcal  = monthlyCalories * 0.20;
+  const proteinCans  = Math.round(proteinKcal / 200);
+
+  // Legumes: ~1,600 kcal/lb dried, supplies ~10% of calories
+  const legumeLbs    = Math.max(1, Math.round(monthlyCalories * 0.10 / 1600));
+
+  // Fats: ~15% of calories. Peanut butter ~2,600 kcal/jar, oil ~3,500 kcal/liter
+  const fatKcal      = monthlyCalories * 0.15;
+  const pbJars       = Math.max(1, Math.round(fatKcal * 0.5 / 2600));
+  const oilUnits     = Math.max(1, Math.round(fatKcal * 0.5 / 3500));
+
+  // Fixed per-person monthly amounts for low-calorie supporting items
+  const n = totalPeople;
+  const vegCans      = Math.round(n * 4);    // ~4 cans veg per person/month
+  const tomatoCans   = Math.round(n * 4);    // ~4 cans tomatoes per person/month
+  const soupCans     = Math.round(n * 4);    // ~4 cans soup per person/month
+  const fruitCans    = Math.round(n * 3);    // ~3 cans fruit per person/month
+  const dairyCans    = Math.round(n * 3);    // ~3 cans evaporated milk per person/month
+  const sweetLbs     = Math.round(n * 1.5);  // ~1.5 lbs sweeteners per person/month
+  const waterGal     = n * 14;               // 1 gal/person/day × 14 days
 
   const foodPlans = {
     wholeFood: [
-      { item: "Whole wheat berries — sealed mylar", qty: () => `${Math.round(grainLbs * 0.4)} lbs`, cat: "Grains" },
-      { item: "Organic brown & white rice",          qty: () => `${Math.round(grainLbs * 0.4)} lbs`, cat: "Grains" },
-      { item: "Rolled oats & steel-cut oats",        qty: () => `${Math.round(grainLbs * 0.2)} lbs`, cat: "Grains" },
-      { item: "Canned wild-caught salmon",           qty: () => `${Math.round(proteinCans * 0.3)} cans`, cat: "Protein" },
-      { item: "Canned chunk light tuna in water",    qty: () => `${Math.round(proteinCans * 0.3)} cans`, cat: "Protein" },
-      { item: "Heirloom dried beans & lentils",      qty: () => `${lentilLbs} lbs`, cat: "Protein" },
-      { item: "Canned organic diced tomatoes",       qty: () => `${Math.round(vegCans * 0.6)} cans`, cat: "Vegetables" },
-      { item: "Dehydrated vegetables — additive-free", qty: () => `${Math.round(totalPeople * 2)} lbs`, cat: "Vegetables" },
-      { item: "Dried fruits — raisins, dates, apricots", qty: () => `${fruitCans} lbs`, cat: "Fruit" },
-      { item: "Cold-pressed olive oil",              qty: () => `${fatUnits} liters`, cat: "Fats" },
-      { item: "Raw honey",                           qty: () => `${Math.round(totalPeople * 1.5)} lbs`, cat: "Sweeteners" },
-      { item: "Sea salt, herbs & spice kit",         qty: () => "1 kit", cat: "Pantry" },
-      { item: "Water (1 gal/person/day × 14 days)",  qty: () => `${waterGal} gal`, cat: "Water" },
+      { item: "Whole wheat berries — sealed mylar",    qty: () => `${Math.round(grainLbsTotal * 0.4)} lbs`, cat: "Grains" },
+      { item: "Organic brown & white rice",            qty: () => `${Math.round(grainLbsTotal * 0.4)} lbs`, cat: "Grains" },
+      { item: "Rolled oats & steel-cut oats",          qty: () => `${Math.round(grainLbsTotal * 0.2)} lbs`, cat: "Grains" },
+      { item: "Canned wild-caught salmon",             qty: () => `${Math.round(proteinCans * 0.4)} cans`,  cat: "Protein" },
+      { item: "Canned chunk light tuna in water",      qty: () => `${Math.round(proteinCans * 0.3)} cans`,  cat: "Protein" },
+      { item: "Heirloom dried beans & lentils",        qty: () => `${legumeLbs} lbs`,                       cat: "Protein" },
+      { item: "Canned organic diced tomatoes",         qty: () => `${tomatoCans} cans`,                     cat: "Vegetables" },
+      { item: "Dehydrated vegetables — additive-free", qty: () => `${Math.max(1, Math.round(n * 1.5))} lbs`, cat: "Vegetables" },
+      { item: "Dried fruits — raisins, dates, apricots", qty: () => `${fruitCans} lbs`,                     cat: "Fruit" },
+      { item: "Cold-pressed olive oil",                qty: () => `${oilUnits} liters`,                     cat: "Fats" },
+      { item: "Raw honey",                             qty: () => `${sweetLbs} lbs`,                        cat: "Sweeteners" },
+      { item: "Sea salt, herbs & spice kit",           qty: () => "1 kit",                                  cat: "Pantry" },
+      { item: "Water (1 gal/person/day × 14 days)",    qty: () => `${waterGal} gal`,                        cat: "Water" },
     ],
     balanced: [
-      { item: "Long-grain white rice",               qty: () => `${Math.round(grainLbs * 0.45)} lbs`, cat: "Grains" },
-      { item: "Rolled oats",                         qty: () => `${Math.round(grainLbs * 0.20)} lbs`, cat: "Grains" },
-      { item: "Pasta — spaghetti, penne, rotini",    qty: () => `${Math.round(grainLbs * 0.35)} lbs`, cat: "Grains" },
-      { item: "Canned chunk light tuna in water",    qty: () => `${Math.round(proteinCans * 0.30)} cans`, cat: "Protein" },
-      { item: "Canned chicken breast",               qty: () => `${Math.round(proteinCans * 0.25)} cans`, cat: "Protein" },
-      { item: "Canned beef stew",                    qty: () => `${Math.round(proteinCans * 0.15)} cans`, cat: "Protein" },
-      { item: "Dried lentils & split peas",          qty: () => `${lentilLbs} lbs`, cat: "Protein" },
-      { item: "Almond & peanut butter",              qty: () => `${Math.round(totalPeople * 1.5)} jars`, cat: "Protein" },
-      { item: "Canned diced tomatoes & paste",       qty: () => `${Math.round(vegCans * 0.55)} cans`, cat: "Vegetables" },
-      { item: "Canned mixed vegetables",             qty: () => `${Math.round(vegCans * 0.45)} cans`, cat: "Vegetables" },
-      { item: "Canned soups — tomato, minestrone, chili", qty: () => `${Math.round(proteinCans * 0.30)} cans`, cat: "Ready Meals" },
-      { item: "Canned peaches, pears & mandarins",   qty: () => `${fruitCans} cans`, cat: "Fruit" },
-      { item: "Evaporated milk (canned)",            qty: () => `${dairyCans} cans`, cat: "Dairy" },
-      { item: "Honey, sugar & brown sugar",          qty: () => `${Math.round(totalPeople * 2)} lbs`, cat: "Sweeteners" },
-      { item: "Salt, pepper, garlic powder, spice kit", qty: () => "1 kit", cat: "Pantry" },
-      { item: "Water (1 gal/person/day × 14 days)",  qty: () => `${waterGal} gal`, cat: "Water" },
+      { item: "Long-grain white rice",                 qty: () => `${Math.round(grainLbsTotal * 0.45)} lbs`, cat: "Grains" },
+      { item: "Rolled oats",                           qty: () => `${Math.round(grainLbsTotal * 0.20)} lbs`, cat: "Grains" },
+      { item: "Pasta — spaghetti, penne, rotini",      qty: () => `${Math.round(grainLbsTotal * 0.35)} lbs`, cat: "Grains" },
+      { item: "Canned chunk light tuna in water",      qty: () => `${Math.round(proteinCans * 0.30)} cans`,  cat: "Protein" },
+      { item: "Canned chicken breast",                 qty: () => `${Math.round(proteinCans * 0.25)} cans`,  cat: "Protein" },
+      { item: "Canned beef stew",                      qty: () => `${Math.round(proteinCans * 0.15)} cans`,  cat: "Protein" },
+      { item: "Dried lentils & split peas",            qty: () => `${legumeLbs} lbs`,                        cat: "Protein" },
+      { item: "Almond & peanut butter",                qty: () => `${pbJars} jars`,                          cat: "Fats" },
+      { item: "Canned diced tomatoes & paste",         qty: () => `${tomatoCans} cans`,                      cat: "Vegetables" },
+      { item: "Canned mixed vegetables",               qty: () => `${vegCans} cans`,                         cat: "Vegetables" },
+      { item: "Canned soups — tomato, minestrone, chili", qty: () => `${soupCans} cans`,                     cat: "Ready Meals" },
+      { item: "Canned peaches, pears & mandarins",     qty: () => `${fruitCans} cans`,                       cat: "Fruit" },
+      { item: "Evaporated milk (canned)",              qty: () => `${dairyCans} cans`,                       cat: "Dairy" },
+      { item: "Honey, sugar & brown sugar",            qty: () => `${sweetLbs} lbs`,                         cat: "Sweeteners" },
+      { item: "Salt, pepper, garlic powder, spice kit", qty: () => "1 kit",                                  cat: "Pantry" },
+      { item: "Water (1 gal/person/day × 14 days)",    qty: () => `${waterGal} gal`,                         cat: "Water" },
     ],
     freezeDried: [
-      { item: "Freeze-dried chicken & rice entrees", qty: () => `${Math.round(monthlyCalories * 0.30 / 400)} srv`, cat: "Entrees" },
-      { item: "Freeze-dried pasta & meat sauce",     qty: () => `${Math.round(monthlyCalories * 0.25 / 380)} srv`, cat: "Entrees" },
-      { item: "Freeze-dried beef stew",              qty: () => `${Math.round(monthlyCalories * 0.20 / 350)} srv`, cat: "Entrees" },
-      { item: "Canned chicken breast",               qty: () => `${Math.round(proteinCans * 0.25)} cans`, cat: "Protein" },
-      { item: "Freeze-dried mixed vegetables",       qty: () => `${Math.round(vegCans * 0.5)} cans`, cat: "Vegetables" },
-      { item: "Instant rice & pasta",                qty: () => `${Math.round(grainLbs * 0.25)} lbs`, cat: "Grains" },
-      { item: "Water (1 gal/person/day × 14 days)",  qty: () => `${waterGal} gal`, cat: "Water" },
+      { item: "Freeze-dried chicken & rice entrees",   qty: () => `${Math.round(monthlyCalories * 0.30 / 400)} srv`, cat: "Entrees" },
+      { item: "Freeze-dried pasta & meat sauce",       qty: () => `${Math.round(monthlyCalories * 0.25 / 380)} srv`, cat: "Entrees" },
+      { item: "Freeze-dried beef stew",                qty: () => `${Math.round(monthlyCalories * 0.20 / 350)} srv`, cat: "Entrees" },
+      { item: "Canned chicken breast",                 qty: () => `${Math.round(proteinCans * 0.25)} cans`,           cat: "Protein" },
+      { item: "Freeze-dried mixed vegetables",         qty: () => `${vegCans} cans`,                                  cat: "Vegetables" },
+      { item: "Instant rice & pasta",                  qty: () => `${Math.round(grainLbsTotal * 0.25)} lbs`,          cat: "Grains" },
+      { item: "Water (1 gal/person/day × 14 days)",    qty: () => `${waterGal} gal`,                                  cat: "Water" },
     ],
     noPreference: [
-      { item: "Long-grain white rice",               qty: () => `${Math.round(grainLbs * 0.60)} lbs`, cat: "Grains" },
-      { item: "Canned chunk light tuna in water",    qty: () => `${Math.round(proteinCans * 0.35)} cans`, cat: "Protein" },
-      { item: "Canned chicken breast",               qty: () => `${Math.round(proteinCans * 0.30)} cans`, cat: "Protein" },
-      { item: "Dried lentils & split peas",          qty: () => `${lentilLbs} lbs`, cat: "Protein" },
-      { item: "Canned mixed vegetables",             qty: () => `${vegCans} cans`, cat: "Vegetables" },
-      { item: "Canned soups (variety)",              qty: () => `${Math.round(proteinCans * 0.35)} cans`, cat: "Ready Meals" },
-      { item: "Peanut butter",                       qty: () => `${Math.round(totalPeople * 2)} jars`, cat: "Protein" },
-      { item: "Honey & sugar",                       qty: () => `${Math.round(totalPeople * 1.5)} lbs`, cat: "Sweeteners" },
-      { item: "Water (1 gal/person/day × 14 days)",  qty: () => `${waterGal} gal`, cat: "Water" },
+      { item: "Long-grain white rice",                 qty: () => `${Math.round(grainLbsTotal * 0.60)} lbs`, cat: "Grains" },
+      { item: "Canned chunk light tuna in water",      qty: () => `${Math.round(proteinCans * 0.35)} cans`,  cat: "Protein" },
+      { item: "Canned chicken breast",                 qty: () => `${Math.round(proteinCans * 0.30)} cans`,  cat: "Protein" },
+      { item: "Dried lentils & split peas",            qty: () => `${legumeLbs} lbs`,                        cat: "Protein" },
+      { item: "Canned mixed vegetables",               qty: () => `${vegCans} cans`,                         cat: "Vegetables" },
+      { item: "Canned soups (variety)",                qty: () => `${soupCans} cans`,                        cat: "Ready Meals" },
+      { item: "Peanut butter",                         qty: () => `${pbJars} jars`,                          cat: "Fats" },
+      { item: "Honey & sugar",                         qty: () => `${sweetLbs} lbs`,                         cat: "Sweeteners" },
+      { item: "Water (1 gal/person/day × 14 days)",    qty: () => `${waterGal} gal`,                         cat: "Water" },
     ],
   };
 
