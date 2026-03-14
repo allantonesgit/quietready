@@ -299,6 +299,39 @@ app.post("/api/onboarding/submit", async (req, res) => {
 
 
 // ============================================================
+// AUTH — Password login
+// POST /api/auth/login
+// Standard email + password login. Returns accessToken for localStorage.
+// ============================================================
+app.post("/api/auth/login", async (req, res) => {
+  const { email, password } = req.body;
+  if (!email || !password) {
+    return res.status(400).json({ error: "Email and password are required." });
+  }
+  try {
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error || !data?.session) {
+      return res.status(401).json({ error: "Invalid email or password." });
+    }
+    // Verify customer record exists
+    const { data: customer } = await supabase
+      .from("customers")
+      .select("id, email, status")
+      .eq("auth_user_id", data.user.id)
+      .single();
+    if (!customer) {
+      return res.status(404).json({ error: "No account found for this email." });
+    }
+    console.log(`🔑 Password login: ${email}`);
+    return res.json({ accessToken: data.session.access_token });
+  } catch (err) {
+    console.error("Login error:", err);
+    return res.status(500).json({ error: "Server error. Please try again." });
+  }
+});
+
+
+// ============================================================
 // AUTH — Set password after magic link
 // POST /api/auth/set-password
 // Customer provides their new password. We call Supabase to
