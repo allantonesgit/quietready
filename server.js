@@ -1107,13 +1107,16 @@ async function fetchKrogerPrice(token, searchTerm, locationId) {
 
   // Price: walk all items to find any with a price (location-specific may be undefined)
   // Kroger returns price as { regular: 10.49, promo: 8.99 } (numbers, not objects)
+  // Filter null items — Kroger sometimes returns items: [null] when rate-limited
+  const validItems = (product.items || []).filter(i => i != null);
+  if (validItems.length === 0) throw new Error(`No valid items for "${searchTerm}" — items: ${JSON.stringify(product.items)}`);
   let price = null;
-  for (const item of (product.items || [])) {
+  for (const item of validItems) {
     const p = item?.price;
-    if (p?.promo && typeof p.promo === "number")   { price = p.promo;   break; }
+    if (p?.promo && typeof p.promo === "number")     { price = p.promo;   break; }
     if (p?.regular && typeof p.regular === "number") { price = p.regular; break; }
   }
-  if (!price) throw new Error(`No price returned for "${searchTerm}" — items: ${JSON.stringify(product.items?.map(i => i?.price))}`);
+  if (!price) throw new Error(`No price returned for "${searchTerm}" — items: ${JSON.stringify(validItems.map(i => i?.price))}`);
 
   return {
     name:        product.description,
@@ -1163,6 +1166,8 @@ app.post("/api/admin/cbi/refresh", async (req, res) => {
   }
 
   try {
+    // Force fresh token for each CBI run — avoids stale/throttled token issues
+    krogerTokenCache = { token: null, expiresAt: 0 };
     const token    = await getKrogerToken();
     const today    = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
     const results  = [];
@@ -1182,8 +1187,8 @@ app.post("/api/admin/cbi/refresh", async (req, res) => {
         console.warn(`CBI: skipping "${item.searchTerm}": ${err.message}`);
         errors.push({ searchTerm: item.searchTerm, error: err.message });
       }
-      // Small delay between requests to be polite to Kroger API
-      await new Promise(r => setTimeout(r, 200));
+      // Delay between requests — Kroger throttles rapid sequential calls
+      await new Promise(r => setTimeout(r, 600));
     }
 
     if (results.length < 6) {
