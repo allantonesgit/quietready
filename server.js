@@ -1125,28 +1125,29 @@ async function fetchKrogerPrice(token, searchTerm, locationId) {
 }
 
 // ── Index basket definition ──
-// Search terms kept simple — no decimals, no slashes (Kroger API returns 400 on those)
-// grams = net weight of the target package size used for cost_per_calorie calc
+// All search terms confirmed working against Kroger location 01600569 (Columbus OH)
+// Key insight: Kroger store-brand terms reliably return prices; national brands often don't
+// grams = net weight of target package size for cost_per_calorie calculation
 const INDEX_BASKET = [
-  // Grains
-  { searchTerm: "white rice 5 lb",         grams: 2268, calPerGram: 3.63, category: "Grains",      weight: 1.5 },
-  { searchTerm: "quaker rolled oats",       grams: 510,  calPerGram: 3.78, category: "Grains",      weight: 1.0 },
-  // Protein
-  { searchTerm: "starkist chunk light tuna",grams: 142,  calPerGram: 1.16, category: "Protein",     weight: 1.5 },
-  { searchTerm: "swanson canned chicken",   grams: 354,  calPerGram: 1.39, category: "Protein",     weight: 1.5 },
-  { searchTerm: "dried lentils 1 lb",       grams: 454,  calPerGram: 3.53, category: "Protein",     weight: 1.0 },
-  // Vegetables
-  { searchTerm: "hunt diced tomatoes",      grams: 411,  calPerGram: 0.24, category: "Vegetables",  weight: 1.0 },
-  { searchTerm: "mixed vegetables canned",  grams: 425,  calPerGram: 0.42, category: "Vegetables",  weight: 1.0 },
-  // Ready meals
-  { searchTerm: "campbells chicken noodle soup", grams: 533, calPerGram: 0.56, category: "Ready Meals", weight: 0.75 },
-  // Fats
-  { searchTerm: "jif peanut butter 16 oz",  grams: 454,  calPerGram: 5.88, category: "Fats",        weight: 1.0 },
-  { searchTerm: "kroger olive oil",         grams: 500,  calPerGram: 8.84, category: "Fats",        weight: 0.75 },
-  // Fruit
-  { searchTerm: "dole canned peaches",      grams: 425,  calPerGram: 0.55, category: "Fruit",       weight: 0.75 },
-  // Dairy
-  { searchTerm: "carnation evaporated milk",grams: 354,  calPerGram: 1.35, category: "Dairy",       weight: 0.75 },
+  // Grains — confirmed working
+  { searchTerm: "white rice 5 lb",             grams: 2268, calPerGram: 3.63, category: "Grains",      weight: 1.5 },
+  { searchTerm: "kroger rolled oats",           grams: 510,  calPerGram: 3.78, category: "Grains",      weight: 1.0 },
+  // Protein — confirmed working
+  { searchTerm: "kroger chunk light tuna",      grams: 142,  calPerGram: 1.16, category: "Protein",     weight: 1.5 },
+  { searchTerm: "kroger chicken breast canned", grams: 354,  calPerGram: 1.39, category: "Protein",     weight: 1.5 },
+  { searchTerm: "kroger lentils",               grams: 454,  calPerGram: 3.53, category: "Protein",     weight: 1.0 },
+  // Vegetables — confirmed working
+  { searchTerm: "kroger diced tomatoes",        grams: 411,  calPerGram: 0.24, category: "Vegetables",  weight: 1.0 },
+  { searchTerm: "kroger mixed vegetables",      grams: 425,  calPerGram: 0.42, category: "Vegetables",  weight: 1.0 },
+  // Ready meals — confirmed working
+  { searchTerm: "kroger vegetable soup",        grams: 533,  calPerGram: 0.56, category: "Ready Meals", weight: 0.75 },
+  // Fats — confirmed working
+  { searchTerm: "kroger creamy peanut butter",  grams: 454,  calPerGram: 5.88, category: "Fats",        weight: 1.0 },
+  { searchTerm: "kroger olive oil 17 oz",       grams: 500,  calPerGram: 8.84, category: "Fats",        weight: 0.75 },
+  // Fruit — confirmed working (peaches unavailable, using mixed fruit cups)
+  { searchTerm: "kroger mixed fruit",           grams: 425,  calPerGram: 0.55, category: "Fruit",       weight: 0.75 },
+  // Dairy — confirmed working
+  { searchTerm: "kroger evaporated milk",       grams: 340,  calPerGram: 1.35, category: "Dairy",       weight: 0.75 },
 ];
 
 // ── Kroger index store (representative suburban US location) ──
