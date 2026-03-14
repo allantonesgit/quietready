@@ -2648,69 +2648,111 @@ function PlanTab({ customer, formData, isPreview, onActivate }) {
   const philosophyLabel = { wholeFood: "Whole Foods First", balanced: "Balanced Mix", freezeDried: "Freeze-Dried", noPreference: "Best Value" }[philosophy] || "Balanced Mix";
   const containerLabel  = { good: "Essential", better: "Premium", best: "Professional" }[formData?.containerTier] || "Essential";
 
-  // ── Food plan per-month item list ──
+  // ── CBI-derived cost calculation ──────────────────────────────
+  // Use real cost-per-calorie from live Kroger price data.
+  // Fallback to 0.003821 (launch baseline from 2026-03-14) if no CBI data yet.
+  const currentCpc = costIndex?.currentCpc || 0.003821;
+
+  // Philosophy multipliers — from pricing_matrix (matched exactly)
+  const philosophyMultiplier = {
+    wholeFood:    1.25,
+    balanced:     1.00,
+    freezeDried:  2.40,
+    noPreference: 0.78,
+  }[philosophy] || 1.00;
+
+  // Per-person daily calories — from wizard Step 2 or USDA defaults
+  const prefs = formData?.preferences || {};
+  const householdObj = formData?.household || {};
+  const calPerPerson = {
+    children: prefs.calories_children || 1400,
+    teens:    prefs.calories_teens    || 2000,
+    adults:   prefs.calories_adults   || 2200,
+    seniors:  prefs.calories_seniors  || 1900,
+  };
+
+  // Total daily household calories (infants excluded)
+  const dailyCalories = ["children","teens","adults","seniors"].reduce((sum, group) => {
+    return sum + (householdObj[group] || 0) * calPerPerson[group];
+  }, 0) || (totalPeople * 2200); // fallback if household object empty
+
+  // Monthly food cost at current market prices
+  const monthlyCalories = dailyCalories * 30;
+  const monthCost       = parseFloat((monthlyCalories * currentCpc * philosophyMultiplier).toFixed(2));
+
+  // Total plan cost and fulfillment months
+  const totalFoodCost = monthCost * months;
+  const fulfillMonths = Math.ceil(totalFoodCost / productBudget);
+
+  // ── Food plan item list — quantities derived from calorie allocation ──
+  // Each category gets a % of total monthly calories, converted to practical units.
+  // Quantities scale with actual household calorie needs, not hardcoded per-person.
+  const grainLbs     = Math.round(monthlyCalories * 0.40 / (3500 * totalPeople) * totalPeople * 10);
+  const proteinCans  = Math.round(monthlyCalories * 0.25 / 200 / totalPeople * totalPeople);
+  const lentilLbs    = Math.round(monthlyCalories * 0.10 / (1600 * totalPeople) * totalPeople * 4);
+  const vegCans      = Math.round(monthlyCalories * 0.10 / 40 / totalPeople * totalPeople);
+  const fruitCans    = Math.round(monthlyCalories * 0.05 / 60 / totalPeople * totalPeople);
+  const fatUnits     = Math.round(totalPeople * 1.5);
+  const dairyCans    = Math.round(totalPeople * 3);
+  const waterGal     = totalPeople * 14;
+
   const foodPlans = {
     wholeFood: [
-      { item: "Whole wheat berries — sealed mylar", qty: n => `${n * 12} lbs`, cat: "Grains", estCost: n => n * 12 * 0.80 },
-      { item: "Organic brown & white rice",          qty: n => `${n * 10} lbs`, cat: "Grains", estCost: n => n * 10 * 0.70 },
-      { item: "Rolled oats & steel-cut oats",        qty: n => `${n * 6} lbs`,  cat: "Grains", estCost: n => n * 6 * 0.65 },
-      { item: "Canned wild-caught salmon",           qty: n => `${n * 8} cans`, cat: "Protein", estCost: n => n * 8 * 3.20 },
-      { item: "Canned chunk light tuna in water",    qty: n => `${n * 8} cans`, cat: "Protein", estCost: n => n * 8 * 1.20 },
-      { item: "Heirloom dried beans & lentils",      qty: n => `${n * 8} lbs`,  cat: "Protein", estCost: n => n * 8 * 1.10 },
-      { item: "Canned organic diced tomatoes",       qty: n => `${n * 10} cans`, cat: "Vegetables", estCost: n => n * 10 * 1.40 },
-      { item: "Dehydrated vegetables — additive-free", qty: n => `${n * 3} lbs`, cat: "Vegetables", estCost: n => n * 3 * 6.50 },
-      { item: "Dried fruits — raisins, dates, apricots", qty: n => `${n * 3} lbs`, cat: "Fruit", estCost: n => n * 3 * 3.50 },
-      { item: "Cold-pressed olive oil",              qty: n => `${n * 2} liters`, cat: "Fats", estCost: n => n * 2 * 8.00 },
-      { item: "Raw honey",                           qty: n => `${n * 2} lbs`,  cat: "Sweeteners", estCost: n => n * 2 * 6.00 },
-      { item: "Sea salt, herbs & spice kit",         qty: () => "1 kit",        cat: "Pantry", estCost: () => 18 },
-      { item: "Water (1 gal/person/day × 14 days)",  qty: n => `${n * 14} gal`, cat: "Water", estCost: n => n * 14 * 1.20 },
+      { item: "Whole wheat berries — sealed mylar", qty: () => `${Math.round(grainLbs * 0.4)} lbs`, cat: "Grains" },
+      { item: "Organic brown & white rice",          qty: () => `${Math.round(grainLbs * 0.4)} lbs`, cat: "Grains" },
+      { item: "Rolled oats & steel-cut oats",        qty: () => `${Math.round(grainLbs * 0.2)} lbs`, cat: "Grains" },
+      { item: "Canned wild-caught salmon",           qty: () => `${Math.round(proteinCans * 0.3)} cans`, cat: "Protein" },
+      { item: "Canned chunk light tuna in water",    qty: () => `${Math.round(proteinCans * 0.3)} cans`, cat: "Protein" },
+      { item: "Heirloom dried beans & lentils",      qty: () => `${lentilLbs} lbs`, cat: "Protein" },
+      { item: "Canned organic diced tomatoes",       qty: () => `${Math.round(vegCans * 0.6)} cans`, cat: "Vegetables" },
+      { item: "Dehydrated vegetables — additive-free", qty: () => `${Math.round(totalPeople * 2)} lbs`, cat: "Vegetables" },
+      { item: "Dried fruits — raisins, dates, apricots", qty: () => `${fruitCans} lbs`, cat: "Fruit" },
+      { item: "Cold-pressed olive oil",              qty: () => `${fatUnits} liters`, cat: "Fats" },
+      { item: "Raw honey",                           qty: () => `${Math.round(totalPeople * 1.5)} lbs`, cat: "Sweeteners" },
+      { item: "Sea salt, herbs & spice kit",         qty: () => "1 kit", cat: "Pantry" },
+      { item: "Water (1 gal/person/day × 14 days)",  qty: () => `${waterGal} gal`, cat: "Water" },
     ],
     balanced: [
-      { item: "Long-grain white rice",               qty: n => `${n * 12} lbs`, cat: "Grains", estCost: n => n * 12 * 0.60 },
-      { item: "Rolled oats",                         qty: n => `${n * 6} lbs`,  cat: "Grains", estCost: n => n * 6 * 0.65 },
-      { item: "Pasta — spaghetti, penne, rotini",    qty: n => `${n * 8} lbs`,  cat: "Grains", estCost: n => n * 8 * 1.20 },
-      { item: "Canned chunk light tuna in water",    qty: n => `${n * 10} cans`, cat: "Protein", estCost: n => n * 10 * 1.20 },
-      { item: "Canned chicken breast",               qty: n => `${n * 8} cans`, cat: "Protein", estCost: n => n * 8 * 2.80 },
-      { item: "Canned beef stew",                    qty: n => `${n * 4} cans`, cat: "Protein", estCost: n => n * 4 * 3.20 },
-      { item: "Dried lentils & split peas",          qty: n => `${n * 6} lbs`,  cat: "Protein", estCost: n => n * 6 * 1.10 },
-      { item: "Almond & peanut butter",              qty: n => `${n * 3} jars`, cat: "Protein", estCost: n => n * 3 * 4.50 },
-      { item: "Canned diced tomatoes & paste",       qty: n => `${n * 10} cans`, cat: "Vegetables", estCost: n => n * 10 * 1.40 },
-      { item: "Canned mixed vegetables",             qty: n => `${n * 6} cans`, cat: "Vegetables", estCost: n => n * 6 * 1.20 },
-      { item: "Canned soups — tomato, minestrone, chili", qty: n => `${n * 8} cans`, cat: "Ready Meals", estCost: n => n * 8 * 2.00 },
-      { item: "Canned peaches, pears & mandarins",   qty: n => `${n * 8} cans`, cat: "Fruit", estCost: n => n * 8 * 1.50 },
-      { item: "Evaporated milk (canned)",            qty: n => `${n * 6} cans`, cat: "Dairy", estCost: n => n * 6 * 1.80 },
-      { item: "Honey, sugar & brown sugar",          qty: n => `${n * 3} lbs`,  cat: "Sweeteners", estCost: n => n * 3 * 2.50 },
-      { item: "Salt, pepper, garlic powder, spice kit", qty: () => "1 kit",     cat: "Pantry", estCost: () => 14 },
-      { item: "Water (1 gal/person/day × 14 days)",  qty: n => `${n * 14} gal`, cat: "Water", estCost: n => n * 14 * 1.20 },
+      { item: "Long-grain white rice",               qty: () => `${Math.round(grainLbs * 0.45)} lbs`, cat: "Grains" },
+      { item: "Rolled oats",                         qty: () => `${Math.round(grainLbs * 0.20)} lbs`, cat: "Grains" },
+      { item: "Pasta — spaghetti, penne, rotini",    qty: () => `${Math.round(grainLbs * 0.35)} lbs`, cat: "Grains" },
+      { item: "Canned chunk light tuna in water",    qty: () => `${Math.round(proteinCans * 0.30)} cans`, cat: "Protein" },
+      { item: "Canned chicken breast",               qty: () => `${Math.round(proteinCans * 0.25)} cans`, cat: "Protein" },
+      { item: "Canned beef stew",                    qty: () => `${Math.round(proteinCans * 0.15)} cans`, cat: "Protein" },
+      { item: "Dried lentils & split peas",          qty: () => `${lentilLbs} lbs`, cat: "Protein" },
+      { item: "Almond & peanut butter",              qty: () => `${Math.round(totalPeople * 1.5)} jars`, cat: "Protein" },
+      { item: "Canned diced tomatoes & paste",       qty: () => `${Math.round(vegCans * 0.55)} cans`, cat: "Vegetables" },
+      { item: "Canned mixed vegetables",             qty: () => `${Math.round(vegCans * 0.45)} cans`, cat: "Vegetables" },
+      { item: "Canned soups — tomato, minestrone, chili", qty: () => `${Math.round(proteinCans * 0.30)} cans`, cat: "Ready Meals" },
+      { item: "Canned peaches, pears & mandarins",   qty: () => `${fruitCans} cans`, cat: "Fruit" },
+      { item: "Evaporated milk (canned)",            qty: () => `${dairyCans} cans`, cat: "Dairy" },
+      { item: "Honey, sugar & brown sugar",          qty: () => `${Math.round(totalPeople * 2)} lbs`, cat: "Sweeteners" },
+      { item: "Salt, pepper, garlic powder, spice kit", qty: () => "1 kit", cat: "Pantry" },
+      { item: "Water (1 gal/person/day × 14 days)",  qty: () => `${waterGal} gal`, cat: "Water" },
     ],
     freezeDried: [
-      { item: "Freeze-dried chicken & rice entrees", qty: n => `${n * 12} srv`, cat: "Entrees", estCost: n => n * 12 * 7.50 },
-      { item: "Freeze-dried pasta & meat sauce",     qty: n => `${n * 10} srv`, cat: "Entrees", estCost: n => n * 10 * 7.50 },
-      { item: "Freeze-dried beef stew",              qty: n => `${n * 8} srv`,  cat: "Entrees", estCost: n => n * 8 * 8.00 },
-      { item: "Canned chicken breast",               qty: n => `${n * 8} cans`, cat: "Protein", estCost: n => n * 8 * 2.80 },
-      { item: "Freeze-dried mixed vegetables",       qty: n => `${n * 6} cans`, cat: "Vegetables", estCost: n => n * 6 * 5.50 },
-      { item: "Instant rice & pasta",                qty: n => `${n * 8} pkts`, cat: "Grains", estCost: n => n * 8 * 2.20 },
-      { item: "Water (1 gal/person/day × 14 days)",  qty: n => `${n * 14} gal`, cat: "Water", estCost: n => n * 14 * 1.20 },
+      { item: "Freeze-dried chicken & rice entrees", qty: () => `${Math.round(monthlyCalories * 0.30 / 400)} srv`, cat: "Entrees" },
+      { item: "Freeze-dried pasta & meat sauce",     qty: () => `${Math.round(monthlyCalories * 0.25 / 380)} srv`, cat: "Entrees" },
+      { item: "Freeze-dried beef stew",              qty: () => `${Math.round(monthlyCalories * 0.20 / 350)} srv`, cat: "Entrees" },
+      { item: "Canned chicken breast",               qty: () => `${Math.round(proteinCans * 0.25)} cans`, cat: "Protein" },
+      { item: "Freeze-dried mixed vegetables",       qty: () => `${Math.round(vegCans * 0.5)} cans`, cat: "Vegetables" },
+      { item: "Instant rice & pasta",                qty: () => `${Math.round(grainLbs * 0.25)} lbs`, cat: "Grains" },
+      { item: "Water (1 gal/person/day × 14 days)",  qty: () => `${waterGal} gal`, cat: "Water" },
     ],
     noPreference: [
-      { item: "Long-grain white rice",               qty: n => `${n * 14} lbs`, cat: "Grains", estCost: n => n * 14 * 0.60 },
-      { item: "Canned chunk light tuna in water",    qty: n => `${n * 12} cans`, cat: "Protein", estCost: n => n * 12 * 1.20 },
-      { item: "Canned chicken breast",               qty: n => `${n * 10} cans`, cat: "Protein", estCost: n => n * 10 * 2.80 },
-      { item: "Dried lentils & split peas",          qty: n => `${n * 8} lbs`,  cat: "Protein", estCost: n => n * 8 * 1.10 },
-      { item: "Canned mixed vegetables",             qty: n => `${n * 8} cans`, cat: "Vegetables", estCost: n => n * 8 * 1.20 },
-      { item: "Canned soups (variety)",              qty: n => `${n * 8} cans`, cat: "Ready Meals", estCost: n => n * 8 * 2.00 },
-      { item: "Peanut butter",                       qty: n => `${n * 4} jars`, cat: "Protein", estCost: n => n * 4 * 4.00 },
-      { item: "Honey & sugar",                       qty: n => `${n * 2} lbs`,  cat: "Sweeteners", estCost: n => n * 2 * 2.50 },
-      { item: "Water (1 gal/person/day × 14 days)",  qty: n => `${n * 14} gal`, cat: "Water", estCost: n => n * 14 * 1.20 },
+      { item: "Long-grain white rice",               qty: () => `${Math.round(grainLbs * 0.60)} lbs`, cat: "Grains" },
+      { item: "Canned chunk light tuna in water",    qty: () => `${Math.round(proteinCans * 0.35)} cans`, cat: "Protein" },
+      { item: "Canned chicken breast",               qty: () => `${Math.round(proteinCans * 0.30)} cans`, cat: "Protein" },
+      { item: "Dried lentils & split peas",          qty: () => `${lentilLbs} lbs`, cat: "Protein" },
+      { item: "Canned mixed vegetables",             qty: () => `${vegCans} cans`, cat: "Vegetables" },
+      { item: "Canned soups (variety)",              qty: () => `${Math.round(proteinCans * 0.35)} cans`, cat: "Ready Meals" },
+      { item: "Peanut butter",                       qty: () => `${Math.round(totalPeople * 2)} jars`, cat: "Protein" },
+      { item: "Honey & sugar",                       qty: () => `${Math.round(totalPeople * 1.5)} lbs`, cat: "Sweeteners" },
+      { item: "Water (1 gal/person/day × 14 days)",  qty: () => `${waterGal} gal`, cat: "Water" },
     ],
   };
 
-  const foodPlan   = foodPlans[philosophy] || foodPlans.balanced;
-  const monthCost  = foodPlan.reduce((s, item) => s + item.estCost(totalPeople), 0);
-
-  // How many fulfillment months needed at current budget
-  const totalFoodCost  = monthCost * months;
-  const fulfillMonths  = Math.ceil(totalFoodCost / productBudget);
+  const foodPlan = foodPlans[philosophy] || foodPlans.balanced;
 
   // CBI-adjusted cost warning
   const cbiPct    = costIndex?.cbiChangePct || 0;
@@ -2787,7 +2829,7 @@ function PlanTab({ customer, formData, isPreview, onActivate }) {
                 {items.map((item, i) => (
                   <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "5px 8px", borderBottom: `1px solid ${COLORS.cream}`, fontSize: "13px", fontFamily: "'Helvetica Neue', sans-serif" }}>
                     <span style={{ color: COLORS.bark }}>{item.item}</span>
-                    <span style={{ fontWeight: "700", color: COLORS.moss, whiteSpace: "nowrap", marginLeft: "12px" }}>{item.qty(totalPeople)}</span>
+                    <span style={{ fontWeight: "700", color: COLORS.moss, whiteSpace: "nowrap", marginLeft: "12px" }}>{item.qty()}</span>
                   </div>
                 ))}
               </div>
@@ -2824,8 +2866,8 @@ function PlanTab({ customer, formData, isPreview, onActivate }) {
           { label: "Household",        value: `${totalPeople} people`, icon: "👥" },
           { label: "Food Philosophy",  value: philosophyLabel,        icon: "🌾" },
           { label: "Monthly Budget",   value: `$${budget}/mo`,        icon: "💰" },
+          { label: "Est. Food Cost",   value: `$${monthCost.toLocaleString()}/mo`, icon: "🛒" },
           { label: "Fulfillment Time", value: `~${fulfillMonths} months`, icon: "📅" },
-          { label: "Container System", value: containerLabel,         icon: "📦" },
         ].map(({ label, value, icon }) => (
           <div key={label} style={{ background: COLORS.white, border: `1px solid ${COLORS.mist}`, borderRadius: "10px", padding: "14px 16px" }}>
             <div style={{ fontSize: "18px", marginBottom: "5px" }}>{icon}</div>

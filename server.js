@@ -719,6 +719,9 @@ app.get("/api/portal/dashboard", requireAuth, async (req, res) => {
   const currentCbi   = latestBasis.data?.cbi_value ?? 100.0;
   const cbiChangePct = parseFloat((((currentCbi - personalCbi) / personalCbi) * 100).toFixed(2));
 
+  // Extract current cost-per-calorie from raw_prices for frontend cost calculations
+  const currentCpc   = latestBasis.data?.raw_prices?.today_cpc ?? 0.003821;
+
   res.json({
     customer:     req.customer,
     preferences:  prefs.data,
@@ -733,6 +736,7 @@ app.get("/api/portal/dashboard", requireAuth, async (req, res) => {
       currentCbi,
       cbiChangePct,   // positive = more expensive, negative = cheaper
       basisDate:      latestBasis.data?.basis_date ?? null,
+      currentCpc,     // cost per calorie at today's Kroger prices — used for plan cost calculations
     },
   });
 });
