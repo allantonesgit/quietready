@@ -1106,9 +1106,10 @@ async function fetchKrogerPrice(token, searchTerm, locationId) {
   if (!product) throw new Error(`No product found for "${searchTerm}"`);
 
   // Price: prefer promo price, fall back to regular price
+  // Kroger returns price as { regular: 10.49, promo: 8.99 } (numbers, not objects)
   const priceInfo = product.items?.[0]?.price;
   const price     = priceInfo?.promo || priceInfo?.regular;
-  if (!price) throw new Error(`No price returned for "${searchTerm}"`);
+  if (!price || typeof price !== "number") throw new Error(`No price returned for "${searchTerm}" — got: ${JSON.stringify(priceInfo)}`);
 
   return {
     name:        product.description,
@@ -1145,7 +1146,7 @@ const INDEX_BASKET = [
 
 // ── Kroger index store (representative suburban US location) ──
 // locationId 70100034 = Kroger Columbus OH — standard suburban store, good price rep
-const KROGER_LOCATION_ID = process.env.KROGER_LOCATION_ID || "70100034";
+const KROGER_LOCATION_ID = process.env.KROGER_LOCATION_ID || "01600569"; // Kroger Brewers Yard, Columbus OH
 
 app.post("/api/admin/cbi/refresh", async (req, res) => {
   // Verify EasyCron shared secret
@@ -1175,6 +1176,8 @@ app.post("/api/admin/cbi/refresh", async (req, res) => {
         console.warn(`CBI: skipping "${item.searchTerm}": ${err.message}`);
         errors.push({ searchTerm: item.searchTerm, error: err.message });
       }
+      // Small delay between requests to be polite to Kroger API
+      await new Promise(r => setTimeout(r, 200));
     }
 
     if (results.length < 6) {
