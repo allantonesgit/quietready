@@ -15,27 +15,19 @@ App lives at: `/home/ubuntu/quietready`
 ```
 This script: `git add` → `git commit` → `git push` → SSH into EC2 → `git pull origin main` → copy files to api/ → `pm2 restart all --update-env`
 
-**IMPORTANT:** The deploy.sh on the Mac must be the fixed version that includes the copy step:
+**IMPORTANT:** Always use `mv ~/Downloads/filename ~/Desktop/QuietReady/filename` (not cp) before deploying.
+
+**IMPORTANT:** GitHub repo is IN SYNC. Always use deploy.sh — never edit server files directly via SSH.
+
+**IMPORTANT:** If PM2 isn't picking up new env vars:
 ```bash
-#!/bin/bash
-echo "🚀 Pushing to GitHub..."
-git add .
-git commit -m "${1:-update}"
-git push
-
-echo "📡 Deploying to EC2..."
-ssh -i /Users/allantone/ssh/QuietReady2026.pem ubuntu@ec2-54-160-4-222.compute-1.amazonaws.com \
-  "cd /home/ubuntu/quietready && git pull origin main && cp server.js api/server.js && cp email.js api/email.js && cp billing.js api/billing.js && pm2 restart all --update-env"
-
-echo "✅ Done!"
+pm2 delete all && pm2 start /home/ubuntu/quietready/server.js --name quietready-api && pm2 save
 ```
-
-**IMPORTANT:** GitHub repo is now IN SYNC with the server as of Session 5. Always use deploy.sh going forward — do not edit server files directly via SSH.
 
 ---
 
 ## Project Overview
-**QuietReady.ai** — A SaaS platform that automates long-term household food/supply security planning and fulfillment. Customers answer a 9-step wizard, get a personalized emergency food plan, and receive automatic monthly shipments with rotation tracking.
+**QuietReady.ai** — A SaaS platform that automates long-term household food/supply security planning and fulfillment. Customers answer a 10-step wizard, get a personalized emergency food plan, and receive automatic monthly shipments with rotation tracking. Fully drop-ship model — no warehousing.
 
 - **Owner:** Allan Tone (allan@dealeraddendums.com)
 - **GitHub:** https://github.com/allantonesgit/quietready
@@ -74,190 +66,226 @@ Font stack: Georgia/serif for headings, Helvetica Neue/sans-serif for body.
 
 ---
 
-## Supabase Schema (001_schema.sql)
+## ✅ PRICING MODEL — LOCKED
+
+| Component | Value | Notes |
+|---|---|---|
+| Monthly membership | $30/mo | Portal access, rotation tracking, recipe guide |
+| Product markup | **30%** | Applied to all purchased items |
+| Shipping | **Pass-through at cost** | Customer pays exact shipping, no markup |
+| Credit card fee | 3.15% | Absorbed into markup — not charged separately |
+
+### How billing math works
+```
+customer_monthly_budget = $X
+membership_fee          = $30
+product_budget          = X - 30
+our_product_cost        = product_budget / 1.30
+our_gross_margin        = product_budget - our_product_cost  (= 23% of product_budget)
+shipping                = passed through at actual carrier cost
+```
+
+### Why 30% (not the original 10%)
+- Drop-ship model means individual order freight at retail rates (~$15-25/shipment)
+- 3.15% credit card fees on full transaction
+- No warehousing staff, but sourcing/coordination overhead
+- 30% markup keeps the business sustainable while remaining price-competitive vs customer DIY
+
+---
+
+## ✅ SUPPLIER STRATEGY — DECIDED
+
+### Model: Vendor-agnostic purchase abstraction layer
+For each item, check multiple vendor APIs, pick lowest **landed cost** (item + shipping to customer zip), place order. Customer never knows which vendor fulfilled it.
+
+### Priority waterfall (Phase 6 implementation)
+```
+1. Wholesale partner price   → best margin
+2. Walmart API price         → broadest SKU coverage
+3. Amazon SP-API price       → specialty/hard-to-find
+4. Pick lowest landed cost
+5. Place order via winning vendor API
+```
+
+### Vendor landscape
+
+**Retail APIs (price discovery + purchasing)**
+| Vendor | API | Best for | Status |
+|---|---|---|---|
+| Walmart | Affiliate + WFS API | Staples, broadest SKU, drop-ship program | Phase 6 |
+| Amazon | SP-API (Selling Partner) | Specialty items, Subscribe & Save | Phase 6 |
+| Kroger | Products API (free) | CBI price indexing only — no purchasing | ✅ Live |
+
+**Wholesale / Emergency Supply (apply for reseller accounts)**
+| Vendor | Best for | Notes |
+|---|---|---|
+| Augason Farms | Freeze-dried, long shelf-life, bulk staples | Has reseller program |
+| Emergency Essentials | Full emergency food range | Wholesale pricing available |
+| Webstaurant Store | Bulk food-service packaging, rice/oats/canned | Has wholesale API |
+| My Patriot Supply | Emergency preparedness, already drop-ships for brands | Strong fit |
+| Ready Store / Nitro-Pak | Non-food emergency items | |
+
+**Non-food emergency items** (first aid kits, water treatment tabs, tools, etc.)
+| Vendor | Best for |
+|---|---|
+| Amazon SP-API | Most items at retail with good margins |
+| Bound Tree / Henry Schein | Medical/first aid wholesale |
+| Ready Store | Emergency gear wholesale |
+
+### Minimum order thresholds
+**Not yet decided** — will discover real minimums during Phase 6 vendor API integration. Fulfillment engine will handle dynamically:
+- If customer budget < vendor minimum → batch with other customers OR route to alternate vendor
+- This is a Phase 6 problem, not a blocker for earlier phases
+
+---
+
+## Environment Variables (EC2 /etc/environment)
+All without quotes:
+```
+KROGER_CLIENT_ID=quietreadyai-bbcctn0d
+KROGER_CLIENT_SECRET=<rotated — in server only, never in chat>
+KROGER_LOCATION_ID=01600569
+CBI_REFRESH_SECRET=84792e323978e5b56fe8bfad153543f821937405c605dada0b871ca5f3da2afa
+```
+
+---
+
+## Supabase Schema
 
 ### Key tables:
-- **customers** — main customer record
-  - `id`, `auth_user_id`, `email`, `full_name`
-  - `stripe_customer_id`, `billing_customer_id`
-  - `status` — `"preview"` | `"active"` | `"paused"` | `"cancelled"`
-  - `billing_address` (jsonb), `shipping_address` (jsonb)
-  - `stripe_payment_method_id`, `activated_at`
-  - `login_token` (text) — custom magic link token
-  - `login_token_expires_at` (timestamptz)
-- **household** — people counts (infants/children/teens/adults/seniors)
-- **pets** — pet type, count, size
-- **customer_preferences** — food philosophy, dietary restrictions, storage dimensions, budget, coverage months, container tier
-- **storage_containers** — container_code (A-1, A-2, B-1...), tier, is_pet_container
-- **orders** — order_number, product_cost, markup_amount, membership_fee (30.00), total_billed, status
-- **order_items** — product_name, supplier, qty, unit, confirmed_at
-- **inventory_items** — product_name, category, supplier, qty_on_hand, unit, status
-- **shipment_instructions** — per-item placement instructions (fires via DB trigger when order_items.confirmed_at is set)
-- **customer_pdfs** — Supabase Storage references for Recipe Guide PDFs
-- **admin_users** — for admin auth middleware
+- **customers** — id, auth_user_id, email, full_name, stripe_customer_id, billing_customer_id, status, billing/shipping addresses, activated_at, login_token, login_token_expires_at, `personal_cbi`, `cbi_locked_at`, `container_payment_preference`
+- **household** — infants/children/teens/adults/seniors
+- **pets** — pet_type, count, size
+- **customer_preferences** — food philosophy, dietary restrictions, storage dims, budget, coverage months, container tier, `calories_children/teens/adults/seniors`
+- **pricing_matrix** — wizard option → cost multiplier (~40 rows seeded)
+- **price_basis** — daily CBI snapshots. Launch baseline: `launch_cpc=0.003821`, `cbi=100.0`, set 2026-03-14
+- **household_changes** — post-activation household change audit log
+- **storage_containers**, **orders**, **order_items**, **inventory_items**, **shipment_instructions**, **customer_pdfs**, **admin_users**
 
 ---
 
-## Billing System (billing.quietready.ai)
+## Cost Basis Index (CBI) — LIVE
 
-### Architecture:
-- Separate Next.js frontend + Deno/Hono.js edge function
-- Supabase project: `pzkrvgohxojqscdsmegc`
-- Single KV table: `kv_store_0ecc29ad`
-- API base: `https://pzkrvgohxojqscdsmegc.supabase.co/functions/v1/make-server-0ecc29ad`
+- EasyCron fires `POST /api/admin/cbi/refresh` daily at 3am UTC
+- 12 Kroger store-brand products, location `01600569`, `filter.fulfillment=ais` required
+- Launch baseline: `cpc = 0.003821` ($/kcal), set 2026-03-14
+- Dashboard returns `costIndex: { personalCbi, currentCbi, cbiChangePct, basisDate, currentCpc }`
 
-### Products:
-- `quietready-membership` — $30.00/mo fixed
-- `quietready-order` — variable (monthlyBudget − $30)
+### Kroger API rules (learned the hard way)
+- Store-brand search terms only — national brands return no price on free tier
+- Always add `filter.fulfillment=ais` — otherwise get `items: [null]`
+- Fresh token on each CBI run (clear `krogerTokenCache` first)
+- 600ms delay between requests
 
-### Critical billing rules:
-- One template per customer — always GET first, then PUT to update (never create duplicate)
-- Subscription products do NOT auto-drop from template
-- `lineItemDescription` tracks fulfillment counter ("1 of 15")
-- `nextInvoiceDate` = activation date + 1 month
-- **Never bill customers with `status = "preview"`**
-- Billing template is NOT created until activation (not at signup/wizard completion)
-
----
-
-## Customer Status Flow
+### Plan cost formula
 ```
-[wizard complete]
-       ↓
-   "preview"    ← account created, password set, can see Month 1 plan only
-       ↓        (Months 2+ blurred/locked)
-  [activation]  ← payment + addresses collected via /api/onboarding/activate
-       ↓
-   "active"     ← full portal access, billing running, shipments begin
-       ↓
-  "paused" / "cancelled"
+monthCost = (dailyCalories × 30) × currentCpc × philosophyMultiplier
 ```
+Philosophy multipliers: wholeFood=1.25, balanced=1.00, freezeDried=2.40, noPreference=0.78
+
+### Quantity rules
+- **Calorie-driven:** grains (40% of kcal ÷ 1600/lb), protein cans (20% ÷ 200/can), legumes (10% ÷ 1600/lb), fats (15% split PB/oil)
+- **Fixed per-person/month:** veg=4 cans, tomatoes=4, soup=4, fruit=3, dairy=3, sweeteners=1.5 lbs, water=14 gal
 
 ---
 
-## Complete Wizard Steps (9 steps)
-1. **Household** — people (infants/children/teens/adults/seniors) + pets (dogs/cats/birds/etc.)
-2. **Dietary** — restrictions (vegetarian/vegan/gluten-free/etc.) + free-text notes
-3. **Food Philosophy** — Whole Foods First / Balanced Mix / Freeze-Dried / Best Value + ingredient avoidances
-4. **Storage** — dimensions (L×W×H), max stack height, storage type (basement/pantry/garage/etc.)
-5. **Coverage & Budget** — coverage months slider (3–24) + monthly budget slider ($75–$500)
-6. **Utilities** — available cooking/heating options during emergency
-7. **Equipment** — existing emergency gear inventory
-8. **Containers** — tier selection: Essential (Gamma Seal) / Premium (IRIS USA) / Professional (Safecastle)
-9. **Plan (Review)** — full plan summary with Month 1 itemized food list, container map, billing breakdown
+## Billing System
+- Supabase project: `pzkrvgohxojqscdsmegc`, KV: `kv_store_0ecc29ad`
+- Products: `quietready-membership` ($30/mo), `quietready-order` (variable)
+- Never bill `status = "preview"` customers
+- Template created only at activation
 
 ---
 
-## Server Structure (IMPORTANT)
+## Wizard Steps (10)
+1. Household  2. Caloric Intake  3. Dietary  4. Food Philosophy  5. Storage
+6. Coverage & Budget  7. Utilities  8. Equipment  9. Containers  10. Plan Review
 
-| Path | Purpose |
-|---|---|
-| `/home/ubuntu/quietready/` | Git root — all source files live here |
-| `/home/ubuntu/quietready/api/` | Old API location — has `node_modules` only |
-| `/home/ubuntu/quietready/frontend/` | Nginx web root — manually created, not in git |
-| `/home/ubuntu/quietready/frontend/index.html` | Static HTML entry point — manually maintained |
-| `/home/ubuntu/quietready/frontend/quietready.jsx` | Symlink → `../quietready.jsx` |
-
-### Nginx config
-- File: `/etc/nginx/sites-enabled/quietready`
-- Serves static files from: `/home/ubuntu/quietready/frontend/`
-- Proxies `/api/*` to: `http://127.0.0.1:3001`
-
-### PM2
-- Points to: `/home/ubuntu/quietready/server.js`
-- node_modules at: `/home/ubuntu/quietready/api/node_modules`
-- Always restart with: `pm2 restart all --update-env`
-- After any `/etc/environment` change, must use `--update-env`
-
-### Frontend loading (NO build step — Babel in browser)
-- React/ReactDOM loaded as UMD globals from unpkg CDN
-- Babel standalone transpiles JSX at runtime
-- **quietready.jsx must NOT use import or export statements**
-- First line must be: `const { useState, useEffect, useRef } = React;`
-- Last line must be: `ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));`
-
-### server.js is ES MODULE
-- Uses `import`/`export` syntax throughout — **never use `require()`**
-- `import crypto from 'crypto';` is at the top of the file
-- Any new imports must use ESM `import` syntax
-
-### After any direct server edit:
-```bash
-cp /home/ubuntu/quietready/server.js /home/ubuntu/quietready/api/server.js
-cp /home/ubuntu/quietready/email.js /home/ubuntu/quietready/api/email.js
-pm2 restart all --update-env
-```
+STEPS constant: `["household","caloricIntake","dietary","foodPhilosophy","storage","coverageBudget","utilities","equipment","containers","plan","success"]`
 
 ---
 
-## Editing files on the server
-**Python3 is the most reliable way to edit files** (sed fails on backticks/special chars). Always use:
-```bash
-python3 << 'PYEOF'
-with open('server.js', 'r') as f:
-    code = f.read()
-# ... make replacements ...
-with open('server.js', 'w') as f:
-    f.write(code)
-PYEOF
-```
+## Portal Screens & Structure
+- `landing` → Log In + Get Started in nav
+- `login` → email+password OR magic link → `POST /api/auth/login`
+- `setpassword`, `linkerror`, `questionnaire`, `portal`
+
+### Portal tabs: 📋 My Plan | 📦 Container Map | 💳 Billing
+- `PlanTab` — CBI-derived costs, shipment accordion, CBI banner
+- `ContainerMapTab` — color-coded by category
+- `getMonthStatus(m)` — still placeholder "projected" (Phase 3)
+- `formData.containers` — still empty, no DB join yet (Phase 3)
 
 ---
 
-## Supabase Auth Settings (IMPORTANT — set in dashboard)
-- **Confirm email: OFF** — Authentication → Providers → Email → "Confirm email" toggle must be OFF
-- **Redirect URLs allowlist** — Authentication → URL Configuration → Redirect URLs:
-  - `https://quietready.ai` ← must be present
-  - `https://quietready.ai/auth/callback`
-- **Site URL:** `https://quietready.ai`
-- **OTP Expiry:** Check Authentication → Policies (should be 86400 = 24 hours)
+## Server Endpoints (key ones)
+- `POST /api/auth/login` — password login
+- `POST /api/onboarding/submit` — creates customer, saves calories
+- `POST /api/onboarding/activate` — preview→active, snapshots CBI
+- `GET /api/portal/dashboard` — returns costIndex incl. currentCpc
+- `POST /api/admin/cbi/refresh` — Kroger price fetch, updates price_basis
+- `GET /api/admin/cbi/latest` — last 30 days CBI
 
 ---
 
-## Magic Link Flow — WORKING as of Session 5
+## Server Structure & Rules
+- `/home/ubuntu/quietready/` — git root
+- `/home/ubuntu/quietready/frontend/` — Nginx web root (not in git)
+- `quietready.jsx` — no import/export, first line `const { useState, useEffect, useRef } = React;`, last line `ReactDOM.createRoot...`
+- `server.js` — ESM only, never `require()`
+- Always use Python3 for server-side string replacement (sed fails on backticks)
 
-### Complete flow (all working):
-1. Customer completes wizard → `POST /api/onboarding/submit` creates customer record
-2. Server generates `crypto.randomBytes(32)` token, stores in `customers.login_token` + `login_token_expires_at`
-3. Welcome email sent with link to `https://quietready.ai/api/auth/magic?token=xxx`
-4. `GET /api/auth/magic` — shows intermediate HTML page with "Enter My Portal →" button (blocks email scanners)
-5. `POST /api/auth/magic` — validates + invalidates token, calls `supabase.auth.admin.generateLink`, fetches action_link with `{redirect:'manual'}`, redirects browser to `location` header containing `#access_token=...`
-6. Frontend detects `#access_token` in URL hash → `POST /api/auth/exchange-token` → returns `sessionToken`
-7. Frontend shows "Create your password" screen with `sessionToken`
-8. `POST /api/auth/set-password` — calls `supabase.auth.getUser(token)` to verify, then `supabase.auth.admin.updateUserById(user.id, { password })`, then generates a **fresh** magic link and exchanges it for a new JWT to return as `accessToken` (old JWT is invalidated by password change)
-9. Fresh `accessToken` stored in `localStorage` as `qr_token`, portal loads via `GET /api/portal/dashboard`
+---
 
-### Auth endpoints in server.js:
-- `GET /api/auth/magic` — intermediate page (scanner protection)
-- `POST /api/auth/magic` — token exchange → Supabase session
-- `POST /api/auth/exchange-token` — Supabase JWT → sessionToken for localStorage
-- `POST /api/auth/set-password` — set password + return fresh JWT
-- `POST /api/auth/resend-magic-link` — resend for expired link screen
+## Supabase Auth Settings
+- Confirm email: OFF
+- Redirect URLs: `https://quietready.ai`, `https://quietready.ai/auth/callback`
+- Site URL: `https://quietready.ai`, OTP Expiry: 86400
 
 ---
 
 ## Known Issues / Tech Debt
-- Several Supabase users in auth table are unconfirmed/broken from failed test runs — clean up in Supabase dashboard → Authentication → Users
-- Portal dashboard loads but activation flow (preview → active) has NOT been end-to-end tested yet
+- `getMonthStatus(m)` always returns "projected" — wire to real orders (Phase 3)
+- `formData.containers` always empty — add storage_containers join to dashboard (Phase 3)
+- Verify `costIndex.currentCpc` flowing correctly end-to-end in production (first task Phase 3)
+- Stale Supabase test users — clean up in dashboard → Authentication → Users
+- server.js still references `FRESHBOOKS_*` env vars in comment block — legacy, unused
 
 ---
 
-## Next Session Priority: Activation Flow
-The portal loads for `status = "preview"` customers. Next step is to test and fix the full activation flow:
+## Phase Roadmap
 
-1. Customer in portal clicks "Activate" / upgrade CTA
-2. `POST /api/onboarding/create-setup-intent` — creates Stripe SetupIntent, returns `clientSecret`
-3. Customer enters card via Stripe Elements + billing/shipping addresses
-4. `POST /api/onboarding/activate` — confirms payment method, creates billing template, sets `status = "active"`
-5. Portal unlocks full access (Months 2+ unblurred)
+### ✅ Phase 1 — COMPLETE (Session 7)
+DB schema, caloric intake wizard step, pricing matrix, portal Plan Tab accordion, Container Map Tab.
 
-Start next session by logging in as a preview customer and clicking through the activation flow, watching PM2 logs live to find where it breaks.
+### ✅ Phase 2 — COMPLETE (Session 8)
+Kroger CBI live, EasyCron running, CBI-derived plan costs, quantity logic fixed, login screen + endpoint.
+
+### 🔜 Phase 3 — NEXT SESSION
+1. Verify `costIndex.currentCpc` flows end-to-end (log in, check Plan Tab shows real cost)
+2. Add `storage_containers` join to `GET /api/portal/dashboard`
+3. Wire `getMonthStatus(m)` to real orders table
+4. Portal: extras & add-ons section
+5. Activation: container payment choice (upfront vs spread)
+
+### Phase 4 — Session 10
+Admin CBI dashboard + customer impact flags, household change flow
+
+### Phase 5 — Session 11
+Resources tab (static content + personalization)
+
+### Phase 6 — Session 12+
+Vendor API purchasing integration (Walmart first, then wholesale partners)
+Apply for reseller accounts: Augason Farms, My Patriot Supply, Webstaurant Store
 
 ---
 
 ## Session History
-- Session 1 (2026-03-10): Explored live site, assessed wizard steps 1–9, identified missing checkout flow
-- Session 2 (2026-03-10): Reviewed full codebase, built preview portal flow: magic link → set password → gated portal → activation checkout with Stripe + addresses
-- Session 3 (2026-03-10): Set up Git, GitHub repo, EC2 Git integration, one-command deploy script
-- Session 4 (2026-03-11): Long debug session on magic link flow. Built custom token system to defeat Outlook scanner. POST /api/auth/magic blocked on server-side session creation.
-- Session 5 (2026-03-12): Fixed entire auth flow end-to-end. Fixed blank page (missing ReactDOM render + export default). Fixed magic link session via fetch(action_link, {redirect:'manual'}). Built exchange-token, resend-magic-link endpoints. Fixed set-password to use admin client + return fresh JWT. Fixed trust proxy. Repo synced. Full flow working: wizard → email → magic link → set password → portal.
+- Session 1 (2026-03-10): Explored live site, identified missing checkout flow
+- Session 2 (2026-03-10): Built preview portal, magic link, activation checkout
+- Session 3 (2026-03-10): Git, GitHub, EC2, deploy script
+- Session 4 (2026-03-11): Magic link debug, custom token system
+- Session 5 (2026-03-12): Fixed auth flow end-to-end
+- Session 6 (2026-03-13): Product roadmap spec. Phase 1 complete. 10-step wizard. Portal Plan Tab + Container Map.
+- Session 7 (2026-03-13): Phase 1 deployed. DB schema, pricing matrix, caloric intake step.
+- Session 8 (2026-03-14): Phase 2 complete. Kroger API live. EasyCron running. CBI baseline set (launch_cpc=0.003821). Plan costs CBI-derived (~$504/mo 2-adult balanced). Quantity logic fixed. Login screen. Pricing model locked: $30 membership + 30% markup + pass-through shipping. Supplier strategy decided: Walmart+Amazon retail APIs + wholesale (Augason Farms, My Patriot Supply, Webstaurant). Vendor-agnostic abstraction layer planned for Phase 6.
