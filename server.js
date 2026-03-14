@@ -1096,14 +1096,18 @@ async function getKrogerToken() {
 
 // ── Fetch price for one index product from Kroger ──
 async function fetchKrogerPrice(token, searchTerm, locationId) {
-  const url = `https://api.kroger.com/v1/products?filter.term=${encodeURIComponent(searchTerm)}&filter.locationId=${locationId}&filter.limit=1`;
+  // filter.fulfillment=ais = available in store — only these return pricing data
+  const url = `https://api.kroger.com/v1/products?filter.term=${encodeURIComponent(searchTerm)}&filter.locationId=${locationId}&filter.fulfillment=ais&filter.limit=5`;
   const res = await fetch(url, {
     headers: { "Authorization": `Bearer ${token}` },
   });
   const rawText = await res.text();
   if (!res.ok) throw new Error(`Kroger product fetch failed for "${searchTerm}": ${res.status} ${rawText.slice(0,200)}`);
   const data = JSON.parse(rawText);
-  const product = data?.data?.[0];
+  // Pick first product that has an in-store priced item
+  const product = (data?.data || []).find(p =>
+    (p.items || []).some(i => i?.price?.regular || i?.price?.promo)
+  ) || data?.data?.[0];
   if (!product) throw new Error(`No product found for "${searchTerm}" — response: ${rawText.slice(0,300)}`);
   console.log(`CBI debug "${searchTerm}": found "${product.description}" items=${JSON.stringify(product.items?.slice(0,1))}`);
 
