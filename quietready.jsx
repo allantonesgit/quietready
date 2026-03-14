@@ -2160,6 +2160,150 @@ function StepSuccess({ data }) {
 // ─── SET PASSWORD SCREEN ──────────────────────────────────────────────────────
 // Shown after clicking the magic link. User sets a password, then enters portal.
 
+function LoginScreen({ onBack, onLogin }) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+  const [magicSent, setMagicSent] = useState(false);
+
+  const handlePasswordLogin = async () => {
+    if (!email.includes("@")) { setError("Please enter a valid email address."); return; }
+    if (!password) { setError("Please enter your password."); return; }
+    setSubmitting(true);
+    setError("");
+    try {
+      // Use Supabase auth directly via exchange — sign in with password
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Login failed.");
+      localStorage.setItem("qr_token", data.accessToken);
+      onLogin(data.accessToken);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleMagicLink = async () => {
+    if (!email.includes("@")) { setError("Please enter a valid email address."); return; }
+    setSubmitting(true);
+    setError("");
+    try {
+      const res = await fetch("/api/auth/resend-magic-link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      if (!res.ok) throw new Error("Could not send link.");
+      setMagicSent(true);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const inputStyle = (focused) => ({
+    width: "100%", padding: "13px 16px", borderRadius: "8px",
+    border: `1.5px solid ${focused ? COLORS.moss : COLORS.mist}`,
+    fontSize: "15px", color: COLORS.bark, background: COLORS.white,
+    outline: "none", fontFamily: "'Georgia', serif", boxSizing: "border-box",
+    transition: "border-color 0.2s",
+  });
+
+  return (
+    <div style={{ minHeight: "100vh", background: COLORS.cream, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "24px" }}>
+      <div style={{ background: COLORS.white, borderRadius: "16px", padding: "48px 40px", maxWidth: "440px", width: "100%", boxShadow: "0 12px 40px rgba(0,0,0,0.10)" }}>
+        <div style={{ textAlign: "center", marginBottom: "32px" }}>
+          <div style={{ fontSize: "22px", fontWeight: "700", color: COLORS.moss, fontFamily: "'Georgia', serif", letterSpacing: "-0.3px" }}>QuietReady.ai</div>
+          <div style={{ fontSize: "10px", letterSpacing: "2px", textTransform: "uppercase", color: COLORS.stone, fontFamily: "'Helvetica Neue', sans-serif", marginTop: "4px" }}>Smart Pantry. Peace of Mind.</div>
+        </div>
+
+        {magicSent ? (
+          <div style={{ textAlign: "center" }}>
+            <div style={{ fontSize: "40px", marginBottom: "16px" }}>📬</div>
+            <h2 style={{ margin: "0 0 12px", fontSize: "22px", fontWeight: "700", color: COLORS.bark, letterSpacing: "-0.5px" }}>Check your inbox</h2>
+            <p style={{ margin: "0 0 28px", fontSize: "14px", color: COLORS.stone, fontFamily: "'Helvetica Neue', sans-serif", lineHeight: "1.6" }}>
+              We sent a magic link to <strong>{email}</strong>. Click it to log in instantly.
+            </p>
+            <button onClick={onBack} style={{ background: "none", border: "none", color: COLORS.moss, fontSize: "14px", cursor: "pointer", fontFamily: "'Helvetica Neue', sans-serif", fontWeight: "600" }}>
+              ← Back to home
+            </button>
+          </div>
+        ) : (
+          <>
+            <div style={{ fontSize: "26px", marginBottom: "8px", textAlign: "center" }}>👤</div>
+            <h2 style={{ margin: "0 0 24px", fontSize: "22px", fontWeight: "700", color: COLORS.bark, textAlign: "center", letterSpacing: "-0.5px" }}>Welcome back</h2>
+
+            <div style={{ marginBottom: "14px" }}>
+              <label style={{ display: "block", fontSize: "10px", fontWeight: "700", letterSpacing: "1.5px", textTransform: "uppercase", color: COLORS.stone, marginBottom: "8px", fontFamily: "'Helvetica Neue', sans-serif" }}>Email address</label>
+              <input
+                type="email"
+                value={email}
+                onChange={e => { setEmail(e.target.value); setError(""); }}
+                onKeyDown={e => e.key === "Enter" && handlePasswordLogin()}
+                placeholder="jane@example.com"
+                autoFocus
+                style={inputStyle(false)}
+              />
+            </div>
+
+            <div style={{ marginBottom: "20px" }}>
+              <label style={{ display: "block", fontSize: "10px", fontWeight: "700", letterSpacing: "1.5px", textTransform: "uppercase", color: COLORS.stone, marginBottom: "8px", fontFamily: "'Helvetica Neue', sans-serif" }}>Password</label>
+              <input
+                type="password"
+                value={password}
+                onChange={e => { setPassword(e.target.value); setError(""); }}
+                onKeyDown={e => e.key === "Enter" && handlePasswordLogin()}
+                placeholder="Your password"
+                style={inputStyle(false)}
+              />
+            </div>
+
+            {error && (
+              <div style={{ background: "#FEF0EE", border: "1px solid #F5C6C0", borderRadius: "8px", padding: "10px 14px", fontSize: "13px", color: "#B94040", marginBottom: "16px", fontFamily: "'Helvetica Neue', sans-serif" }}>
+                {error}
+              </div>
+            )}
+
+            <button
+              onClick={handlePasswordLogin}
+              disabled={submitting}
+              style={{ width: "100%", background: submitting ? COLORS.stone : COLORS.moss, color: COLORS.white, border: "none", borderRadius: "10px", padding: "14px", fontSize: "15px", fontWeight: "700", cursor: submitting ? "not-allowed" : "pointer", fontFamily: "inherit", transition: "background 0.2s", marginBottom: "12px" }}
+            >
+              {submitting ? "Signing in..." : "Sign In →"}
+            </button>
+
+            <div style={{ textAlign: "center", margin: "16px 0", display: "flex", alignItems: "center", gap: "12px" }}>
+              <div style={{ flex: 1, height: "1px", background: COLORS.mist }} />
+              <span style={{ fontSize: "11px", color: COLORS.stone, fontFamily: "'Helvetica Neue', sans-serif", letterSpacing: "1px", textTransform: "uppercase" }}>or</span>
+              <div style={{ flex: 1, height: "1px", background: COLORS.mist }} />
+            </div>
+
+            <button
+              onClick={handleMagicLink}
+              disabled={submitting}
+              style={{ width: "100%", background: "none", border: `1.5px solid ${COLORS.mist}`, borderRadius: "10px", padding: "13px", fontSize: "14px", color: COLORS.bark, cursor: submitting ? "not-allowed" : "pointer", fontFamily: "inherit", marginBottom: "16px" }}
+            >
+              📧 Send me a magic link instead
+            </button>
+
+            <button onClick={onBack} style={{ width: "100%", background: "none", border: "none", fontSize: "13px", color: COLORS.stone, cursor: "pointer", fontFamily: "inherit" }}>
+              ← Back to home
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function LinkErrorScreen({ onBack }) {
   const [email, setEmail] = useState("");
   const [status, setStatus] = useState("idle"); // idle | sending | sent | error
@@ -3430,7 +3574,7 @@ function LandingPage({ onStart }) {
 // ─── MAIN APP ─────────────────────────────────────────────────────────────────
 
 function App() {
-  const [screen, setScreen] = useState("landing"); // landing | questionnaire | portal | setpassword | linkerror
+  const [screen, setScreen] = useState("landing"); // landing | questionnaire | portal | setpassword | linkerror | login
   const [stepIndex, setStepIndex] = useState(0);
   const [formData, setFormData] = useState({});
   const [showEmailModal, setShowEmailModal] = useState(false);
@@ -3591,6 +3735,18 @@ function App() {
   }
 
   // ── Link error screen (expired/invalid magic link) ───────────
+  if (screen === "login") {
+    return (
+      <LoginScreen
+        onBack={() => setScreen("landing")}
+        onLogin={(token) => {
+          setAuthToken(token);
+          loadPortal(token);
+        }}
+      />
+    );
+  }
+
   if (screen === "linkerror") {
     return <LinkErrorScreen onBack={() => setScreen("landing")} />;
   }
@@ -3623,7 +3779,7 @@ function App() {
               onClick={() => {
                 const saved = localStorage.getItem("qr_token");
                 if (saved) { setAuthToken(saved); loadPortal(saved); }
-                else setScreen("linkerror");
+                else setScreen("login");
               }}
               style={{ background: "none", border: `1px solid ${COLORS.mist}`, padding: "9px 20px", fontSize: "12px", letterSpacing: "1px", color: COLORS.stone, cursor: "pointer", fontFamily: "'Helvetica Neue', sans-serif", fontWeight: "500" }}
             >
