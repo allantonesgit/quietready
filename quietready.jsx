@@ -2546,7 +2546,183 @@ const US_STATES = [
 ];
 
 // ── Activation Modal (3 steps: Address → Payment) ─────────────────────────────
-function ActivateModal({ customer, authToken, onActivated, onClose }) {
+// ── HouseholdChangeModal ──────────────────────────────────────────────────────
+function HouseholdChangeModal({ currentHousehold, currentPets, authToken, onSaved, onClose }) {
+  const [hh,      setHh]      = useState({ ...currentHousehold });
+  const [pets,    setPets]     = useState({ ...currentPets });
+  const [reason,  setReason]  = useState("");
+  const [saving,  setSaving]  = useState(false);
+  const [error,   setError]   = useState("");
+  const [success, setSuccess] = useState(false);
+
+  const ageBrackets = [
+    { key: "infants",  label: "Infants",  desc: "Under 2 years", icon: "👶" },
+    { key: "children", label: "Children", desc: "Ages 2–12",      icon: "🧒" },
+    { key: "teens",    label: "Teens",    desc: "Ages 13–17",     icon: "🧑" },
+    { key: "adults",   label: "Adults",   desc: "Ages 18–64",     icon: "👤" },
+    { key: "seniors",  label: "Seniors",  desc: "Ages 65+",       icon: "🧓" },
+  ];
+
+  const petTypes = [
+    { key: "dogs", label: "Dogs", icon: "🐕", sizeOptions: ["Small (<20 lbs)", "Medium (20–60 lbs)", "Large (60+ lbs)"] },
+    { key: "cats", label: "Cats", icon: "🐈", sizeOptions: null },
+    { key: "birds", label: "Birds", icon: "🦜", sizeOptions: null },
+    { key: "smallAnimals", label: "Small Animals", icon: "🐹", sizeOptions: null },
+  ];
+
+  const updateHh = (key, delta) => {
+    setHh(prev => ({ ...prev, [key]: Math.max(0, (prev[key] || 0) + delta) }));
+  };
+
+  const updatePet = (key, delta) => {
+    setPets(prev => ({
+      ...prev,
+      [key]: { ...prev[key], count: Math.max(0, (prev[key]?.count || 0) + delta) }
+    }));
+  };
+
+  const totalPeople = ageBrackets.reduce((s, b) => s + (hh[b.key] || 0), 0);
+
+  // Detect any changes vs current
+  const hasChanges = ageBrackets.some(b => (hh[b.key] || 0) !== (currentHousehold[b.key] || 0)) ||
+    petTypes.some(p => (pets[p.key]?.count || 0) !== (currentPets[p.key]?.count || 0));
+
+  const handleSave = async () => {
+    if (!hasChanges) { onClose(); return; }
+    if (totalPeople === 0) { setError("Household must have at least one person."); return; }
+    setSaving(true); setError("");
+    try {
+      const res = await fetch("/api/portal/household", {
+        method: "PATCH",
+        headers: { "Authorization": `Bearer ${authToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ household: hh, pets, reason: reason || null }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setError(data.error || "Save failed"); return; }
+      setSuccess(true);
+      setTimeout(() => { onSaved({ household: hh, pets }); onClose(); }, 1200);
+    } catch { setError("Network error — please try again."); }
+    finally { setSaving(false); }
+  };
+
+  const counterBtn = (color) => ({
+    width: "32px", height: "32px", borderRadius: "6px",
+    border: `1.5px solid ${color === "green" ? COLORS.moss : COLORS.mist}`,
+    background: color === "green" ? COLORS.moss : COLORS.white,
+    cursor: "pointer", fontSize: "18px", lineHeight: "1",
+    color: color === "green" ? COLORS.white : COLORS.stone,
+    display: "flex", alignItems: "center", justifyContent: "center",
+    fontFamily: "'Helvetica Neue', sans-serif", fontWeight: "700",
+  });
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(44,36,22,0.6)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: "20px" }}>
+      <div style={{ background: COLORS.cream, borderRadius: "16px", width: "100%", maxWidth: "520px", maxHeight: "85vh", overflowY: "auto", boxShadow: "0 24px 64px rgba(0,0,0,0.3)" }}>
+        {/* Header */}
+        <div style={{ padding: "24px 28px 16px", borderBottom: `1px solid ${COLORS.mist}`, position: "sticky", top: 0, background: COLORS.cream, zIndex: 1 }}>
+          <div style={{ fontSize: "11px", letterSpacing: "3px", textTransform: "uppercase", color: COLORS.clay, marginBottom: "4px", fontFamily: "'Helvetica Neue', sans-serif" }}>Update Plan</div>
+          <div style={{ fontSize: "22px", fontWeight: "700", color: COLORS.bark, fontFamily: "Georgia, serif", letterSpacing: "-0.5px" }}>Household Change</div>
+          <div style={{ fontSize: "13px", color: COLORS.stone, fontFamily: "'Helvetica Neue', sans-serif", marginTop: "4px" }}>
+            Your plan will recalculate immediately. Your shipment schedule and quantities will update at next fulfillment.
+          </div>
+        </div>
+
+        <div style={{ padding: "20px 28px" }}>
+          {/* People */}
+          <div style={{ fontSize: "11px", letterSpacing: "2px", textTransform: "uppercase", color: COLORS.clay, marginBottom: "12px", fontFamily: "'Helvetica Neue', sans-serif" }}>People</div>
+          <div style={{ background: COLORS.white, borderRadius: "10px", border: `1px solid ${COLORS.mist}`, marginBottom: "20px", overflow: "hidden" }}>
+            {ageBrackets.map((b, i) => {
+              const prev = currentHousehold[b.key] || 0;
+              const curr = hh[b.key] || 0;
+              const changed = curr !== prev;
+              return (
+                <div key={b.key} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 18px", borderBottom: i < ageBrackets.length - 1 ? `1px solid ${COLORS.mist}` : "none", background: changed ? `${COLORS.moss}08` : "transparent" }}>
+                  <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
+                    <span style={{ fontSize: "22px" }}>{b.icon}</span>
+                    <div>
+                      <div style={{ fontWeight: "600", fontSize: "14px", color: COLORS.bark }}>{b.label}</div>
+                      <div style={{ fontSize: "11px", color: COLORS.stone, fontFamily: "'Helvetica Neue', sans-serif" }}>{b.desc}</div>
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
+                    {changed && <span style={{ fontSize: "11px", color: COLORS.moss, fontWeight: "600", fontFamily: "'Helvetica Neue', sans-serif" }}>{prev} → {curr}</span>}
+                    <button onClick={() => updateHh(b.key, -1)} style={counterBtn("gray")}>−</button>
+                    <span style={{ fontSize: "18px", fontWeight: "700", minWidth: "20px", textAlign: "center", color: COLORS.bark }}>{curr}</span>
+                    <button onClick={() => updateHh(b.key, 1)} style={counterBtn("green")}>+</button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Pets */}
+          <div style={{ fontSize: "11px", letterSpacing: "2px", textTransform: "uppercase", color: COLORS.clay, marginBottom: "12px", fontFamily: "'Helvetica Neue', sans-serif" }}>Pets</div>
+          <div style={{ background: COLORS.white, borderRadius: "10px", border: `1px solid ${COLORS.mist}`, marginBottom: "20px", overflow: "hidden" }}>
+            {petTypes.map((p, i) => {
+              const prev = currentPets[p.key]?.count || 0;
+              const curr = pets[p.key]?.count || 0;
+              const changed = curr !== prev;
+              return (
+                <div key={p.key}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 18px", borderBottom: `1px solid ${COLORS.mist}`, background: changed ? `${COLORS.moss}08` : "transparent" }}>
+                    <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
+                      <span style={{ fontSize: "22px" }}>{p.icon}</span>
+                      <div style={{ fontWeight: "600", fontSize: "14px", color: COLORS.bark }}>{p.label}</div>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
+                      {changed && <span style={{ fontSize: "11px", color: COLORS.moss, fontWeight: "600", fontFamily: "'Helvetica Neue', sans-serif" }}>{prev} → {curr}</span>}
+                      <button onClick={() => updatePet(p.key, -1)} style={counterBtn("gray")}>−</button>
+                      <span style={{ fontSize: "18px", fontWeight: "700", minWidth: "20px", textAlign: "center", color: COLORS.bark }}>{curr}</span>
+                      <button onClick={() => updatePet(p.key, 1)} style={counterBtn("green")}>+</button>
+                    </div>
+                  </div>
+                  {curr > 0 && p.sizeOptions && (
+                    <div style={{ padding: "10px 18px 14px 52px", borderBottom: `1px solid ${COLORS.mist}`, display: "flex", gap: "8px", flexWrap: "wrap", background: changed ? `${COLORS.moss}05` : COLORS.cream }}>
+                      <span style={{ fontSize: "12px", color: COLORS.stone, fontFamily: "'Helvetica Neue', sans-serif", alignSelf: "center", marginRight: "4px" }}>Size:</span>
+                      {p.sizeOptions.map(sz => (
+                        <button key={sz} onClick={() => setPets(prev => ({ ...prev, [p.key]: { ...prev[p.key], size: sz } }))}
+                          style={{ padding: "4px 12px", fontSize: "12px", fontFamily: "'Helvetica Neue', sans-serif", border: `1.5px solid ${pets[p.key]?.size === sz ? COLORS.moss : COLORS.mist}`, background: pets[p.key]?.size === sz ? "#EDF2E8" : COLORS.white, color: pets[p.key]?.size === sz ? COLORS.moss : COLORS.stone, cursor: "pointer", borderRadius: "4px" }}>
+                          {sz}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Reason (optional) */}
+          <div style={{ marginBottom: "20px" }}>
+            <div style={{ fontSize: "11px", letterSpacing: "2px", textTransform: "uppercase", color: COLORS.stone, marginBottom: "8px", fontFamily: "'Helvetica Neue', sans-serif" }}>Reason (optional)</div>
+            <input
+              type="text" value={reason} onChange={e => setReason(e.target.value)}
+              placeholder="e.g. New baby, child moved out, caring for parent…"
+              style={{ width: "100%", padding: "10px 14px", border: `1px solid ${COLORS.mist}`, borderRadius: "8px", fontSize: "13px", background: COLORS.white, color: COLORS.bark, outline: "none", boxSizing: "border-box", fontFamily: "'Helvetica Neue', sans-serif" }}
+            />
+          </div>
+
+          {/* Error / success */}
+          {error   && <div style={{ color: "#C45A4A", fontSize: "13px", marginBottom: "12px", fontFamily: "'Helvetica Neue', sans-serif" }}>{error}</div>}
+          {success && <div style={{ color: COLORS.moss, fontSize: "13px", fontWeight: "600", marginBottom: "12px", fontFamily: "'Helvetica Neue', sans-serif" }}>✓ Household updated! Refreshing your plan…</div>}
+
+          {/* Buttons */}
+          <div style={{ display: "flex", gap: "10px" }}>
+            <button onClick={onClose} disabled={saving} style={{ flex: 1, background: "none", border: `1px solid ${COLORS.mist}`, color: COLORS.stone, padding: "12px", borderRadius: "8px", fontSize: "13px", cursor: "pointer", fontFamily: "'Helvetica Neue', sans-serif" }}>
+              Cancel
+            </button>
+            <button onClick={handleSave} disabled={saving || !hasChanges || success}
+              style={{ flex: 2, background: hasChanges ? COLORS.moss : COLORS.mist, color: COLORS.white, border: "none", padding: "12px", borderRadius: "8px", fontSize: "13px", fontWeight: "700", cursor: hasChanges ? "pointer" : "default", fontFamily: "'Helvetica Neue', sans-serif", letterSpacing: "0.5px" }}>
+              {saving ? "Saving…" : hasChanges ? "Save Changes" : "No Changes"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
   const [step, setStep] = useState(1); // 1=address, 2=payment
   const [billingAddress, setBillingAddress] = useState({ line1: "", line2: "", city: "", state: "", zip: "", country: "US" });
   const [shippingAddress, setShippingAddress] = useState({ line1: "", line2: "", city: "", state: "", zip: "", country: "US" });
@@ -3032,7 +3208,7 @@ function ExtrasSection({ formData, authToken, isPreview }) {
 }
 
 // ── PlanTab ──────────────────────────────────────────────────────────────────
-function PlanTab({ customer, formData, authToken, isPreview, onActivate }) {
+function PlanTab({ customer, formData, authToken, isPreview, onActivate, onUpdateHousehold }) {
   const [openMonth, setOpenMonth] = useState(isPreview ? null : 1);
 
   const budget        = formData?.monthlyBudget  || 150;
@@ -3323,16 +3499,18 @@ function PlanTab({ customer, formData, authToken, isPreview, onActivate }) {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: "10px", marginBottom: "28px" }}>
         {[
           { label: "Coverage Goal",    value: `${months} months`,    icon: "🎯" },
-          { label: "Household",        value: `${totalPeople} people`, icon: "👥" },
+          { label: "Household",        value: `${totalPeople} people`, icon: "👥", action: !isPreview ? onUpdateHousehold : null },
           { label: "Food Philosophy",  value: philosophyLabel,        icon: "🌾" },
           { label: "Monthly Budget",   value: `$${budget}/mo`,        icon: "💰" },
           { label: "Est. Food Cost",   value: `$${monthCost.toLocaleString()}/mo`, icon: "🛒" },
           { label: "Fulfillment Time", value: `~${fulfillMonths} months`, icon: "📅" },
-        ].map(({ label, value, icon }) => (
-          <div key={label} style={{ background: COLORS.white, border: `1px solid ${COLORS.mist}`, borderRadius: "10px", padding: "14px 16px" }}>
+        ].map(({ label, value, icon, action }) => (
+          <div key={label} onClick={action || undefined}
+            style={{ background: COLORS.white, border: `1px solid ${action ? COLORS.moss : COLORS.mist}`, borderRadius: "10px", padding: "14px 16px", cursor: action ? "pointer" : "default", position: "relative" }}>
             <div style={{ fontSize: "18px", marginBottom: "5px" }}>{icon}</div>
             <div style={{ fontSize: "10px", color: COLORS.stone, fontFamily: "'Helvetica Neue', sans-serif", letterSpacing: "0.5px", textTransform: "uppercase", marginBottom: "3px" }}>{label}</div>
             <div style={{ fontSize: "14px", fontWeight: "700", color: COLORS.bark }}>{value}</div>
+            {action && <div style={{ fontSize: "10px", color: COLORS.moss, fontFamily: "'Helvetica Neue', sans-serif", fontWeight: "600", marginTop: "4px" }}>Tap to update →</div>}
           </div>
         ))}
       </div>
@@ -3505,6 +3683,12 @@ function ContainerMapTab({ customer, formData, isPreview }) {
 function Portal({ customer, formData, authToken, onActivated, onLogout }) {
   const [activeTab, setActiveTab] = useState("plan");
   const [showActivate, setShowActivate] = useState(false);
+  const [showHouseholdChange, setShowHouseholdChange] = useState(false);
+  const [localFormData, setLocalFormData] = useState(formData);
+
+  // Keep localFormData in sync when formData prop changes (e.g. on initial load)
+  useEffect(() => { setLocalFormData(formData); }, [formData]);
+
   const isPreview = customer?.status === "preview";
 
   const budget = formData?.monthlyBudget || customer?.preferences?.monthly_budget || 150;
@@ -3661,10 +3845,11 @@ function Portal({ customer, formData, authToken, onActivated, onLogout }) {
         {activeTab === "plan" && (
           <PlanTab
             customer={customer}
-            formData={formData}
+            formData={localFormData}
             authToken={authToken}
             isPreview={isPreview}
             onActivate={() => setShowActivate(true)}
+            onUpdateHousehold={() => setShowHouseholdChange(true)}
           />
         )}
 
@@ -3672,9 +3857,10 @@ function Portal({ customer, formData, authToken, onActivated, onLogout }) {
         {activeTab === "containers" && (
           <ContainerMapTab
             customer={customer}
-            formData={formData}
+            formData={localFormData}
             isPreview={isPreview}
           />
+        )}
         )}
 
                 {/* ── Billing Tab ── */}
@@ -3732,6 +3918,18 @@ function Portal({ customer, formData, authToken, onActivated, onLogout }) {
             onActivated(updatedCustomer);
           }}
           onClose={() => setShowActivate(false)}
+        />
+      )}
+
+      {showHouseholdChange && !isPreview && (
+        <HouseholdChangeModal
+          currentHousehold={localFormData?.household || {}}
+          currentPets={localFormData?.pets?.reduce((acc, p) => ({ ...acc, [p.pet_type]: { count: p.count, size: p.size } }), {}) || {}}
+          authToken={authToken}
+          onSaved={({ household, pets: updatedPets }) => {
+            setLocalFormData(prev => ({ ...prev, household }));
+          }}
+          onClose={() => setShowHouseholdChange(false)}
         />
       )}
     </div>
