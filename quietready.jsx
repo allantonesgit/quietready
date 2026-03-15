@@ -2545,7 +2545,6 @@ const US_STATES = [
   ["VA","Virginia"],["WA","Washington"],["WV","West Virginia"],["WI","Wisconsin"],["WY","Wyoming"],
 ];
 
-// ── Activation Modal (3 steps: Address → Payment) ─────────────────────────────
 // ── HouseholdChangeModal ──────────────────────────────────────────────────────
 function HouseholdChangeModal({ currentHousehold, currentPets, authToken, onSaved, onClose }) {
   const [hh,      setHh]      = useState({ ...currentHousehold });
@@ -2723,6 +2722,8 @@ function HouseholdChangeModal({ currentHousehold, currentPets, authToken, onSave
 }
 
 
+// ── ActivateModal ─────────────────────────────────────────────────────────────
+function ActivateModal({ customer, authToken, onActivated, onClose }) {
   const [step, setStep] = useState(1); // 1=address, 2=payment
   const [billingAddress, setBillingAddress] = useState({ line1: "", line2: "", city: "", state: "", zip: "", country: "US" });
   const [shippingAddress, setShippingAddress] = useState({ line1: "", line2: "", city: "", state: "", zip: "", country: "US" });
