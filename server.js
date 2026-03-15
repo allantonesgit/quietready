@@ -736,15 +736,16 @@ app.post("/api/onboarding/activate", requireAuth, async (req, res) => {
 app.get("/api/portal/dashboard", requireAuth, async (req, res) => {
   const cid = req.customer.id;
 
-  const [prefs, household, pets, inventory, orders, instructions, pdfs, latestBasis] = await Promise.all([
+  const [prefs, household, pets, inventory, orders, instructions, pdfs, latestBasis, containers] = await Promise.all([
     supabase.from("customer_preferences").select("*").eq("customer_id", cid).single(),
     supabase.from("household").select("*").eq("customer_id", cid).single(),
     supabase.from("pets").select("*").eq("customer_id", cid),
     supabase.from("inventory_items").select("*").eq("customer_id", cid).order("category"),
-    supabase.from("orders").select("*").eq("customer_id", cid).order("created_at", { ascending: false }).limit(6),
+    supabase.from("orders").select("*").eq("customer_id", cid).order("created_at", { ascending: true }),
     supabase.from("shipment_instructions").select("*").eq("customer_id", cid).eq("is_acknowledged", false).order("created_at", { ascending: false }),
     supabase.from("customer_pdfs").select("*").eq("customer_id", cid).eq("is_current", true),
-    supabase.from("price_basis").select("basis_date, cbi_value").order("basis_date", { ascending: false }).limit(1).single(),
+    supabase.from("price_basis").select("basis_date, cbi_value, raw_prices").order("basis_date", { ascending: false }).limit(1).single(),
+    supabase.from("storage_containers").select("*").eq("customer_id", cid).order("container_code"),
   ]);
 
   // CBI delta: how much have food costs changed since this customer activated?
@@ -761,7 +762,8 @@ app.get("/api/portal/dashboard", requireAuth, async (req, res) => {
     household:    household.data,
     pets:         pets.data,
     inventory:    inventory.data,
-    orders:       orders.data,
+    orders:       orders.data,   // ascending by created_at — index 0 = month 1
+    containers:   containers.data || [],
     pendingInstructions: instructions.data,
     pdfs:         pdfs.data,
     costIndex: {

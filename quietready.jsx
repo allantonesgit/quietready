@@ -2934,8 +2934,13 @@ function PlanTab({ customer, formData, isPreview, onActivate }) {
   const allMonths = Array.from({ length: fulfillMonths }, (_, i) => i + 1);
 
   // Status of each month (fulfilled / in-progress / projected)
+  // orders are sorted ascending by created_at from the server — index 0 = month 1
   const getMonthStatus = (m) => {
-    // TODO: wire to real orders data — for now use placeholder logic
+    const orders = formData?.orders || [];
+    const order = orders[m - 1];
+    if (!order) return "projected";
+    if (order.status === "fulfilled" || order.status === "shipped") return "fulfilled";
+    if (order.status === "pending" || order.status === "processing") return "in-progress";
     return "projected";
   };
 
@@ -3662,6 +3667,7 @@ function App() {
         containerTier:  prefs.container_tier,
         household:      data.household || {},
         containers:     data.containers || [],
+        orders:         data.orders    || [],
         costIndex:      data.costIndex  || null,
         preferences:    prefs,
       });
