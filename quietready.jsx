@@ -4156,6 +4156,104 @@ function AdminScreen({ onLogout }) {
                 </table>
               </div>
             </div>
+
+            {/* ── Customer Impact Flags ── */}
+            {(() => {
+              const FLAG_THRESHOLD = 2; // % change to trigger a flag
+              const activeCusts = customers.filter(c => c.status === "active" && c.personal_cbi);
+              const currentCbiVal = latest?.cbi_value ?? 100;
+
+              const flagged = activeCusts.map(c => {
+                const personalCbi  = c.personal_cbi ?? 100;
+                const changePct    = parseFloat((((currentCbiVal - personalCbi) / personalCbi) * 100).toFixed(2));
+                const budget       = c.customer_preferences?.monthly_budget ?? 0;
+                const productBudget = budget - 30;
+                const monthlyImpact = parseFloat((productBudget * (changePct / 100)).toFixed(2));
+                return { ...c, personalCbi, changePct, monthlyImpact };
+              }).filter(c => Math.abs(c.changePct) >= FLAG_THRESHOLD)
+                .sort((a, b) => Math.abs(b.changePct) - Math.abs(a.changePct));
+
+              return (
+                <div style={{ marginTop: "20px" }}>
+                  <div style={{ marginBottom: "16px" }}>
+                    <div style={{ fontSize: "11px", letterSpacing: "3px", textTransform: "uppercase", color: COLORS.clay, marginBottom: "6px" }}>Customer Impact</div>
+                    <div style={{ fontSize: "20px", fontWeight: "700", color: COLORS.bark, fontFamily: "Georgia, serif", letterSpacing: "-0.5px" }}>CBI Impact Flags</div>
+                    <div style={{ fontSize: "13px", color: COLORS.stone, marginTop: "4px" }}>
+                      Active customers whose food costs have moved ≥{FLAG_THRESHOLD}% since they enrolled
+                    </div>
+                  </div>
+
+                  {flagged.length === 0 ? (
+                    <div style={{ background: `${COLORS.moss}10`, border: `1px solid ${COLORS.moss}30`, borderRadius: "10px", padding: "20px 24px", display: "flex", alignItems: "center", gap: "12px" }}>
+                      <span style={{ fontSize: "20px" }}>✅</span>
+                      <div style={{ fontFamily: "'Helvetica Neue', sans-serif" }}>
+                        <div style={{ fontSize: "13px", fontWeight: "700", color: COLORS.bark }}>No customers flagged</div>
+                        <div style={{ fontSize: "12px", color: COLORS.stone, marginTop: "2px" }}>
+                          All {activeCusts.length} active customer{activeCusts.length !== 1 ? "s" : ""} are within {FLAG_THRESHOLD}% of their enrollment CBI.
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ background: COLORS.white, border: `1px solid ${COLORS.mist}`, borderRadius: "12px", overflow: "hidden" }}>
+                      {/* Flag summary bar */}
+                      <div style={{ background: flagged.some(f => f.changePct > 0) ? "#FEF6ED" : "#EDF2E8", borderBottom: `1px solid ${COLORS.mist}`, padding: "14px 20px", display: "flex", alignItems: "center", gap: "12px" }}>
+                        <span style={{ fontSize: "18px" }}>{flagged.some(f => f.changePct > 0) ? "📈" : "📉"}</span>
+                        <div style={{ fontFamily: "'Helvetica Neue', sans-serif" }}>
+                          <div style={{ fontSize: "13px", fontWeight: "700", color: COLORS.bark }}>
+                            {flagged.length} customer{flagged.length !== 1 ? "s" : ""} affected by CBI movement
+                          </div>
+                          <div style={{ fontSize: "12px", color: COLORS.stone, marginTop: "2px" }}>
+                            Consider reaching out to customers with large positive changes — their plan timelines may be slipping.
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Impact table */}
+                      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px", fontFamily: "'Helvetica Neue', sans-serif" }}>
+                        <thead>
+                          <tr style={{ background: COLORS.cream }}>
+                            {["Customer", "Enrolled CBI", "Current CBI", "Change", "Budget Impact / mo", "Monthly Budget"].map(h => (
+                              <th key={h} style={{ padding: "10px 16px", textAlign: "left", color: COLORS.stone, fontWeight: "600", letterSpacing: "0.5px", borderBottom: `1px solid ${COLORS.mist}` }}>{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {flagged.map((c, i) => {
+                            const up = c.changePct > 0;
+                            return (
+                              <tr key={i} style={{ borderBottom: `1px solid ${COLORS.mist}`, background: i % 2 === 0 ? "transparent" : COLORS.cream }}>
+                                <td style={{ padding: "12px 16px" }}>
+                                  <div style={{ fontWeight: "600", color: COLORS.bark }}>{c.full_name || "—"}</div>
+                                  <div style={{ fontSize: "11px", color: COLORS.stone, marginTop: "2px", fontFamily: "monospace" }}>{c.email}</div>
+                                </td>
+                                <td style={{ padding: "12px 16px", color: COLORS.bark, fontFamily: "monospace" }}>{c.personalCbi.toFixed(1)}</td>
+                                <td style={{ padding: "12px 16px", color: COLORS.bark, fontFamily: "monospace" }}>{currentCbiVal.toFixed(1)}</td>
+                                <td style={{ padding: "12px 16px" }}>
+                                  <span style={{ background: up ? "#FEF6ED" : "#EDF2E8", color: up ? COLORS.clay : COLORS.moss, padding: "3px 10px", borderRadius: "20px", fontWeight: "700", fontSize: "12px" }}>
+                                    {up ? "▲" : "▼"} {Math.abs(c.changePct)}%
+                                  </span>
+                                </td>
+                                <td style={{ padding: "12px 16px", fontWeight: "700", color: up ? COLORS.clay : COLORS.moss }}>
+                                  {up ? "+" : ""}{c.monthlyImpact < 0 ? "-" : ""}${Math.abs(c.monthlyImpact).toFixed(2)}
+                                </td>
+                                <td style={{ padding: "12px 16px", color: COLORS.stone }}>
+                                  ${c.customer_preferences?.monthly_budget ?? "—"}/mo
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+
+                      {/* Footer note */}
+                      <div style={{ padding: "12px 20px", borderTop: `1px solid ${COLORS.mist}`, fontSize: "11px", color: COLORS.stone, fontFamily: "'Helvetica Neue', sans-serif" }}>
+                        Budget impact = product budget × CBI change %. Positive = customer needs more money to stay on schedule. CBI threshold: {FLAG_THRESHOLD}%.
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
           </div>
         )}
 
