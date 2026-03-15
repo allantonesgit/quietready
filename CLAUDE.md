@@ -32,6 +32,7 @@ pm2 delete all && pm2 start /home/ubuntu/quietready/server.js --name quietready-
 - **Owner:** Allan Tone (allan@dealeraddendums.com)
 - **GitHub:** https://github.com/allantonesgit/quietready
 - **Main app:** https://quietready.ai
+- **Admin panel:** https://quietready.ai/admin
 - **Billing portal:** https://billing.quietready.ai
 
 ---
@@ -169,6 +170,7 @@ CBI_REFRESH_SECRET=84792e323978e5b56fe8bfad153543f821937405c605dada0b871ca5f3da2
 - EasyCron fires `POST /api/admin/cbi/refresh` daily at 3am UTC
 - 12 Kroger store-brand products, location `01600569`, `filter.fulfillment=ais` required
 - Launch baseline: `cpc = 0.003821` ($/kcal), set 2026-03-14
+- As of 2026-03-15: `currentCpc = 0.004394` (~15% above launch baseline)
 - Dashboard returns `costIndex: { personalCbi, currentCbi, cbiChangePct, basisDate, currentCpc }`
 
 ### Kroger API rules (learned the hard way)
@@ -209,22 +211,31 @@ STEPS constant: `["household","caloricIntake","dietary","foodPhilosophy","storag
 - `landing` → Log In + Get Started in nav
 - `login` → email+password OR magic link → `POST /api/auth/login`
 - `setpassword`, `linkerror`, `questionnaire`, `portal`
+- `admin` — separate screen at `/admin` path, own login (checks `admin_users` table), token stored as `qr_admin_token`
 
 ### Portal tabs: 📋 My Plan | 📦 Container Map | 💳 Billing
 - `PlanTab` — CBI-derived costs, shipment accordion, CBI banner
-- `ContainerMapTab` — color-coded by category
-- `getMonthStatus(m)` — still placeholder "projected" (Phase 3)
-- `formData.containers` — still empty, no DB join yet (Phase 3)
+- `ContainerMapTab` — color-coded by category, reads `formData.containers` from DB
+- `getMonthStatus(m)` — wired to real orders; maps pending/processing→in-progress, fulfilled/shipped→fulfilled, missing→projected
+- `formData.orders` — populated from dashboard (ascending by created_at, index 0 = month 1)
+- `formData.containers` — populated from `storage_containers` table via dashboard join
+
+### Admin panel tabs: 📈 CBI Prices | 👥 Customers
+- CBI Tab: stat row (today CPC, launch CPC, % change, days tracked) + SVG line chart + daily log table
+- Customers Tab: full customer list with status badges and budget
+- Add users to `admin_users` table in Supabase to grant access
 
 ---
 
 ## Server Endpoints (key ones)
-- `POST /api/auth/login` — password login
+- `POST /api/auth/login` — password login (customers)
+- `POST /api/admin/login` — password login (admin only — checks admin_users table)
+- `GET /api/admin/me` — verify admin token + return admin record
 - `POST /api/onboarding/submit` — creates customer, saves calories
 - `POST /api/onboarding/activate` — preview→active, snapshots CBI
-- `GET /api/portal/dashboard` — returns costIndex incl. currentCpc
+- `GET /api/portal/dashboard` — returns costIndex, containers, orders (ascending), household, prefs, pets, inventory, pdfs, pendingInstructions
 - `POST /api/admin/cbi/refresh` — Kroger price fetch, updates price_basis
-- `GET /api/admin/cbi/latest` — last 30 days CBI
+- `GET /api/admin/cbi/latest` — last 30 days CBI (raw_prices included)
 
 ---
 
@@ -234,6 +245,8 @@ STEPS constant: `["household","caloricIntake","dietary","foodPhilosophy","storag
 - `quietready.jsx` — no import/export, first line `const { useState, useEffect, useRef } = React;`, last line `ReactDOM.createRoot...`
 - `server.js` — ESM only, never `require()`
 - Always use Python3 for server-side string replacement (sed fails on backticks)
+- Nginx must serve `index.html` for `/admin` path — `location /admin { try_files $uri /index.html; }`
+- Auth token key: customers use `qr_token`, admins use `qr_admin_token` (localStorage)
 
 ---
 
@@ -245,11 +258,9 @@ STEPS constant: `["household","caloricIntake","dietary","foodPhilosophy","storag
 ---
 
 ## Known Issues / Tech Debt
-- `getMonthStatus(m)` always returns "projected" — wire to real orders (Phase 3)
-- `formData.containers` always empty — add storage_containers join to dashboard (Phase 3)
-- Verify `costIndex.currentCpc` flowing correctly end-to-end in production (first task Phase 3)
 - Stale Supabase test users — clean up in dashboard → Authentication → Users
 - server.js still references `FRESHBOOKS_*` env vars in comment block — legacy, unused
+- Phase 3 Tasks 4 & 5 still pending (extras/add-ons section, container payment choice)
 
 ---
 
@@ -261,15 +272,20 @@ DB schema, caloric intake wizard step, pricing matrix, portal Plan Tab accordion
 ### ✅ Phase 2 — COMPLETE (Session 8)
 Kroger CBI live, EasyCron running, CBI-derived plan costs, quantity logic fixed, login screen + endpoint.
 
-### 🔜 Phase 3 — NEXT SESSION
-1. Verify `costIndex.currentCpc` flows end-to-end (log in, check Plan Tab shows real cost)
-2. Add `storage_containers` join to `GET /api/portal/dashboard`
-3. Wire `getMonthStatus(m)` to real orders table
-4. Portal: extras & add-ons section
-5. Activation: container payment choice (upfront vs spread)
+### 🔄 Phase 3 — IN PROGRESS (Sessions 9)
+1. ✅ Verified `costIndex.currentCpc` flows end-to-end (real value: 0.004394 — raw_prices was missing from price_basis select, now fixed)
+2. ✅ Added `storage_containers` join to `GET /api/portal/dashboard`
+3. ✅ Wired `getMonthStatus(m)` to real orders table
+4. 🔜 Portal: extras & add-ons section
+5. 🔜 Activation: container payment choice (upfront vs spread)
 
-### Phase 4 — Session 10
-Admin CBI dashboard + customer impact flags, household change flow
+### 🔄 Phase 4 — STARTED (Session 9)
+- ✅ Admin area live at `quietready.ai/admin`
+- ✅ Admin login endpoint (`POST /api/admin/login`) + session endpoint (`GET /api/admin/me`)
+- ✅ CBI chart (SVG line chart, stat row, daily log table)
+- ✅ Customer list tab
+- 🔜 Customer impact flags (CBI change → notify affected customers)
+- 🔜 Household change flow
 
 ### Phase 5 — Session 11
 Resources tab (static content + personalization)
@@ -289,3 +305,4 @@ Apply for reseller accounts: Augason Farms, My Patriot Supply, Webstaurant Store
 - Session 6 (2026-03-13): Product roadmap spec. Phase 1 complete. 10-step wizard. Portal Plan Tab + Container Map.
 - Session 7 (2026-03-13): Phase 1 deployed. DB schema, pricing matrix, caloric intake step.
 - Session 8 (2026-03-14): Phase 2 complete. Kroger API live. EasyCron running. CBI baseline set (launch_cpc=0.003821). Plan costs CBI-derived (~$504/mo 2-adult balanced). Quantity logic fixed. Login screen. Pricing model locked: $30 membership + 30% markup + pass-through shipping. Supplier strategy decided: Walmart+Amazon retail APIs + wholesale (Augason Farms, My Patriot Supply, Webstaurant). Vendor-agnostic abstraction layer planned for Phase 6.
+- Session 9 (2026-03-15): Phase 3 tasks 1-3 complete. Fixed raw_prices missing from price_basis select (currentCpc was always falling back to hardcoded 0.003821 — now reads real value 0.004394, ~15% above launch). Added storage_containers join to dashboard. Wired getMonthStatus to real orders. Added orders to formData (ascending sort). Phase 4 started: admin area live at quietready.ai/admin with login wall, CBI chart, customer list. Added POST /api/admin/login and GET /api/admin/me endpoints.
