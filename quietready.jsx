@@ -2776,66 +2776,56 @@ function ActivateModal({ customer, authToken, onActivated, onClose }) {
   );
 }
 
+// ── Equipment catalog — single source of truth for labels, prices, categories ─
+const EQUIPMENT_CATALOG = [
+  { key: "portableCooker",    label: "Portable Propane Cooker",      desc: "High-BTU outdoor burner",                    price: 49,  cat: "Cooking & Kitchen",      catIcon: "🍳" },
+  { key: "campCooking",       label: "Camp Cooking Set",              desc: "Pots, pans, utensils kit",                   price: 35,  cat: "Cooking & Kitchen",      catIcon: "🍳" },
+  { key: "manualCanOpener",   label: "Manual Can Opener",             desc: "Non-electric, heavy-duty",                   price: 12,  cat: "Cooking & Kitchen",      catIcon: "🍳" },
+  { key: "waterFilter",       label: "Water Filtration System",       desc: "Gravity or pump filter",                     price: 89,  cat: "Cooking & Kitchen",      catIcon: "🍳" },
+  { key: "waterPurification", label: "Water Purification Tablets",    desc: "Chemical backup option",                     price: 14,  cat: "Cooking & Kitchen",      catIcon: "🍳" },
+  { key: "firstAidKit",       label: "Comprehensive First Aid Kit",   desc: "72-hour trauma-grade kit",                   price: 65,  cat: "First Aid & Medical",    catIcon: "🩺" },
+  { key: "medications",       label: "30-Day Medication Reserve",     desc: "Common OTC medications",                     price: 45,  cat: "First Aid & Medical",    catIcon: "🩺" },
+  { key: "dentalKit",         label: "Emergency Dental Kit",          desc: "Temporary filling, pain relief",             price: 22,  cat: "First Aid & Medical",    catIcon: "🩺" },
+  { key: "handCrankRadio",    label: "Hand-Crank Emergency Radio",    desc: "NOAA weather + AM/FM",                       price: 39,  cat: "Power & Communication",  catIcon: "📡" },
+  { key: "solarCharger",      label: "Solar Phone Charger",           desc: "Keep devices powered",                       price: 55,  cat: "Power & Communication",  catIcon: "📡" },
+  { key: "flashlights",       label: "LED Flashlights + Batteries",   desc: "Multiple units recommended",                 price: 28,  cat: "Power & Communication",  catIcon: "📡" },
+  { key: "campToilet",        label: "Portable Camp Toilet",          desc: "Self-contained with holding tank",           price: 95,  cat: "Sanitation",             catIcon: "🚿" },
+  { key: "compostToilet",     label: "Composting Toilet",             desc: "Waterless, no chemicals needed",             price: 179, cat: "Sanitation",             catIcon: "🚿" },
+  { key: "bucketToilet",      label: "Emergency Bucket Toilet",       desc: "5-gallon with biodegradable bags",           price: 29,  cat: "Sanitation",             catIcon: "🚿" },
+  { key: "emergencyBlankets", label: "Emergency Mylar Blankets",      desc: "Lightweight thermal retention",              price: 18,  cat: "Warmth & Shelter",       catIcon: "🏕️" },
+  { key: "sleepingBags",      label: "Cold-Weather Sleeping Bags",    desc: "Rated to 0°F",                               price: 89,  cat: "Warmth & Shelter",       catIcon: "🏕️" },
+];
+
+const CONTAINER_PRICES = { good: 8, better: 22, best: 45 }; // est. per container
+
 // ── ExtrasSection ─────────────────────────────────────────────────────────────
 function ExtrasSection({ formData, authToken, isPreview }) {
   const equipment = formData?.preferences?.equipment || {};
   const [localEquip, setLocalEquip] = useState(equipment);
-  const [saving, setSaving] = useState(null); // key being saved
+  const [saving, setSaving] = useState(null);
 
-  // Sync if formData changes (e.g. after re-load)
   useEffect(() => { setLocalEquip(formData?.preferences?.equipment || {}); }, [formData]);
 
-  const CATEGORIES = [
-    {
-      title: "Cooking & Kitchen",
-      icon: "🍳",
-      items: [
-        { key: "portableCooker",    label: "Portable Propane Cooker",      desc: "High-BTU outdoor burner" },
-        { key: "campCooking",       label: "Camp Cooking Set",              desc: "Pots, pans, utensils kit" },
-        { key: "manualCanOpener",   label: "Manual Can Opener",             desc: "Non-electric, heavy-duty" },
-        { key: "waterFilter",       label: "Water Filtration System",       desc: "Gravity or pump filter" },
-        { key: "waterPurification", label: "Water Purification Tablets",    desc: "Chemical backup option" },
-      ],
-    },
-    {
-      title: "First Aid & Medical",
-      icon: "🩺",
-      items: [
-        { key: "firstAidKit",  label: "Comprehensive First Aid Kit",  desc: "72-hour trauma-grade kit" },
-        { key: "medications",  label: "30-Day Medication Reserve",    desc: "Common OTC medications" },
-        { key: "dentalKit",    label: "Emergency Dental Kit",         desc: "Temporary filling, pain relief" },
-      ],
-    },
-    {
-      title: "Power & Communication",
-      icon: "📡",
-      items: [
-        { key: "handCrankRadio", label: "Hand-Crank Emergency Radio",  desc: "NOAA weather + AM/FM" },
-        { key: "solarCharger",   label: "Solar Phone Charger",         desc: "Keep devices powered" },
-        { key: "flashlights",    label: "LED Flashlights + Batteries", desc: "Multiple units recommended" },
-      ],
-    },
-    {
-      title: "Sanitation",
-      icon: "🚿",
-      items: [
-        { key: "campToilet",    label: "Portable Camp Toilet",    desc: "Self-contained with holding tank" },
-        { key: "compostToilet", label: "Composting Toilet",       desc: "Waterless, no chemicals needed" },
-        { key: "bucketToilet",  label: "Emergency Bucket Toilet", desc: "5-gallon with biodegradable bags" },
-      ],
-    },
-    {
-      title: "Warmth & Shelter",
-      icon: "🏕️",
-      items: [
-        { key: "emergencyBlankets", label: "Emergency Mylar Blankets",    desc: "Lightweight thermal retention" },
-        { key: "sleepingBags",      label: "Cold-Weather Sleeping Bags",  desc: "Rated to 0°F" },
-      ],
-    },
-  ];
+  // Derive container info
+  const containerTier   = formData?.containerTier || "good";
+  const containerLabel  = { good: "Essential", better: "Premium", best: "Professional" }[containerTier] || "Essential";
+  const totalPeople     = Object.values(formData?.household || {}).reduce((s, v) => s + (typeof v === "number" ? v : 0), 0) || 2;
+  const months          = formData?.coverageMonths || 3;
+  const philosophy      = formData?.foodPhilosophy || "balanced";
+  const containerVolume = { good: 0.57, better: 1.71, best: 2.05 }[containerTier] || 0.57;
+  const volPPM          = { wholeFood: 2.2, balanced: 1.9, freezeDried: 1.4, noPreference: 1.6 }[philosophy] || 1.9;
+  const containerCount  = Math.ceil((totalPeople * volPPM * months) / containerVolume);
+  const containerUnitPrice = CONTAINER_PRICES[containerTier] || 8;
+  const containerTotal  = containerCount * containerUnitPrice;
 
-  const allItems = CATEGORIES.flatMap(c => c.items);
-  const selectedKeys = allItems.filter(i => localEquip[i.key]).map(i => i.key);
+  // Selected equipment items, ordered by catalog position
+  const selectedItems   = EQUIPMENT_CATALOG.filter(i => localEquip[i.key]);
+  const midpoint        = Math.ceil(selectedItems.length / 2);
+  const ship1Items      = selectedItems.slice(0, midpoint);
+  const ship2Items      = selectedItems.slice(midpoint);
+
+  // Group all items by category for display
+  const cats = [...new Set(EQUIPMENT_CATALOG.map(i => i.cat))];
 
   const toggle = async (key) => {
     if (isPreview) return;
@@ -2848,114 +2838,195 @@ function ExtrasSection({ formData, authToken, isPreview }) {
         headers: { "Authorization": `Bearer ${authToken}`, "Content-Type": "application/json" },
         body: JSON.stringify({ key, value: newVal }),
       });
-    } catch (e) {
-      // Revert on failure
+    } catch {
       setLocalEquip(prev => ({ ...prev, [key]: !newVal }));
     } finally {
       setSaving(null);
     }
   };
 
+  const equipTotal = selectedItems.reduce((s, i) => s + i.price, 0);
+
   return (
     <div style={{ marginTop: "32px" }}>
       {/* Header */}
       <div style={{ marginBottom: "20px" }}>
         <div style={{ fontSize: "11px", letterSpacing: "3px", textTransform: "uppercase", color: COLORS.clay, fontFamily: "'Helvetica Neue', sans-serif", marginBottom: "4px" }}>Beyond Food</div>
-        <div style={{ fontSize: "20px", fontWeight: "700", color: COLORS.bark, letterSpacing: "-0.5px" }}>
-          Equipment & Supplies
-        </div>
+        <div style={{ fontSize: "20px", fontWeight: "700", color: COLORS.bark, letterSpacing: "-0.5px" }}>Equipment & Supplies</div>
         <div style={{ fontSize: "13px", color: COLORS.stone, fontFamily: "'Helvetica Neue', sans-serif", marginTop: "4px" }}>
           {isPreview
             ? "Items you selected during setup. Activate to manage your add-ons."
-            : `${selectedKeys.length} item${selectedKeys.length !== 1 ? "s" : ""} selected · sourced alongside your food shipments`}
+            : `${selectedItems.length} item${selectedItems.length !== 1 ? "s" : ""} selected · sourced alongside your food shipments`}
         </div>
       </div>
 
-      {/* Selected items summary banner (if any selected) */}
-      {selectedKeys.length > 0 && (
-        <div style={{ background: `${COLORS.moss}10`, border: `1px solid ${COLORS.moss}30`, borderRadius: "10px", padding: "14px 18px", marginBottom: "16px", display: "flex", alignItems: "center", gap: "12px" }}>
-          <span style={{ fontSize: "18px" }}>✅</span>
+      {/* Shipment 1 — Containers */}
+      <div style={{ background: COLORS.white, border: `1px solid ${COLORS.mist}`, borderRadius: "10px", marginBottom: "10px", overflow: "hidden" }}>
+        <div style={{ padding: "12px 18px", borderBottom: `1px solid ${COLORS.mist}`, display: "flex", alignItems: "center", justifyContent: "space-between", background: COLORS.cream }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <span style={{ fontSize: "16px" }}>📦</span>
+            <span style={{ fontSize: "12px", fontWeight: "700", letterSpacing: "0.5px", color: COLORS.bark, fontFamily: "'Helvetica Neue', sans-serif" }}>Storage Containers</span>
+            <span style={{ fontSize: "10px", background: `${COLORS.moss}20`, color: COLORS.moss, padding: "2px 8px", borderRadius: "10px", fontWeight: "700", fontFamily: "'Helvetica Neue', sans-serif" }}>Shipment 1</span>
+          </div>
+          <span style={{ fontSize: "13px", fontWeight: "700", color: COLORS.bark, fontFamily: "'Helvetica Neue', sans-serif" }}>Est. ${containerTotal}</span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 18px" }}>
+          <div>
+            <div style={{ fontSize: "13px", fontWeight: "600", color: COLORS.bark, fontFamily: "'Helvetica Neue', sans-serif" }}>{containerCount}× {containerLabel} containers</div>
+            <div style={{ fontSize: "11px", color: COLORS.stone, fontFamily: "'Helvetica Neue', sans-serif", marginTop: "2px" }}>Delivered with your first food shipment · est. ${containerUnitPrice}/container</div>
+          </div>
+          <div style={{ fontSize: "11px", color: COLORS.stone, fontFamily: "'Helvetica Neue', sans-serif", textAlign: "right" }}>
+            <div style={{ fontWeight: "600", color: COLORS.clay }}>Est. retail</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Shipment 1 equipment */}
+      {ship1Items.length > 0 && (
+        <div style={{ background: COLORS.white, border: `1px solid ${COLORS.mist}`, borderRadius: "10px", marginBottom: "10px", overflow: "hidden" }}>
+          <div style={{ padding: "12px 18px", borderBottom: `1px solid ${COLORS.mist}`, display: "flex", alignItems: "center", justifyContent: "space-between", background: COLORS.cream }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+              <span style={{ fontSize: "16px" }}>🛠️</span>
+              <span style={{ fontSize: "12px", fontWeight: "700", letterSpacing: "0.5px", color: COLORS.bark, fontFamily: "'Helvetica Neue', sans-serif" }}>Equipment — Batch 1</span>
+              <span style={{ fontSize: "10px", background: `${COLORS.moss}20`, color: COLORS.moss, padding: "2px 8px", borderRadius: "10px", fontWeight: "700", fontFamily: "'Helvetica Neue', sans-serif" }}>Shipment 1</span>
+            </div>
+            <span style={{ fontSize: "13px", fontWeight: "700", color: COLORS.bark, fontFamily: "'Helvetica Neue', sans-serif" }}>Est. ${ship1Items.reduce((s, i) => s + i.price, 0)}</span>
+          </div>
+          {ship1Items.map(item => (
+            <div key={item.key} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 18px", borderBottom: `1px solid ${COLORS.mist}` }}>
+              <div>
+                <div style={{ fontSize: "13px", fontWeight: "600", color: COLORS.bark, fontFamily: "'Helvetica Neue', sans-serif" }}>{item.label}</div>
+                <div style={{ fontSize: "11px", color: COLORS.stone, fontFamily: "'Helvetica Neue', sans-serif" }}>{item.desc}</div>
+              </div>
+              <div style={{ textAlign: "right", flexShrink: 0, marginLeft: "16px" }}>
+                <div style={{ fontSize: "13px", fontWeight: "700", color: COLORS.bark, fontFamily: "'Helvetica Neue', sans-serif" }}>${item.price}</div>
+                <div style={{ fontSize: "10px", color: COLORS.clay, fontFamily: "'Helvetica Neue', sans-serif" }}>Est. retail</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Shipment 2 equipment */}
+      {ship2Items.length > 0 && (
+        <div style={{ background: COLORS.white, border: `1px solid ${COLORS.mist}`, borderRadius: "10px", marginBottom: "10px", overflow: "hidden" }}>
+          <div style={{ padding: "12px 18px", borderBottom: `1px solid ${COLORS.mist}`, display: "flex", alignItems: "center", justifyContent: "space-between", background: COLORS.cream }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+              <span style={{ fontSize: "16px" }}>🛠️</span>
+              <span style={{ fontSize: "12px", fontWeight: "700", letterSpacing: "0.5px", color: COLORS.bark, fontFamily: "'Helvetica Neue', sans-serif" }}>Equipment — Batch 2</span>
+              <span style={{ fontSize: "10px", background: `${COLORS.clay}20`, color: COLORS.clay, padding: "2px 8px", borderRadius: "10px", fontWeight: "700", fontFamily: "'Helvetica Neue', sans-serif" }}>Shipment 2</span>
+            </div>
+            <span style={{ fontSize: "13px", fontWeight: "700", color: COLORS.bark, fontFamily: "'Helvetica Neue', sans-serif" }}>Est. ${ship2Items.reduce((s, i) => s + i.price, 0)}</span>
+          </div>
+          {ship2Items.map(item => (
+            <div key={item.key} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 18px", borderBottom: `1px solid ${COLORS.mist}` }}>
+              <div>
+                <div style={{ fontSize: "13px", fontWeight: "600", color: COLORS.bark, fontFamily: "'Helvetica Neue', sans-serif" }}>{item.label}</div>
+                <div style={{ fontSize: "11px", color: COLORS.stone, fontFamily: "'Helvetica Neue', sans-serif" }}>{item.desc}</div>
+              </div>
+              <div style={{ textAlign: "right", flexShrink: 0, marginLeft: "16px" }}>
+                <div style={{ fontSize: "13px", fontWeight: "700", color: COLORS.bark, fontFamily: "'Helvetica Neue', sans-serif" }}>${item.price}</div>
+                <div style={{ fontSize: "10px", color: COLORS.clay, fontFamily: "'Helvetica Neue', sans-serif" }}>Est. retail</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Total summary */}
+      {(selectedItems.length > 0 || containerCount > 0) && (
+        <div style={{ background: COLORS.bark, borderRadius: "10px", padding: "16px 20px", marginBottom: "20px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div style={{ fontFamily: "'Helvetica Neue', sans-serif" }}>
-            <div style={{ fontSize: "13px", fontWeight: "700", color: COLORS.bark }}>
-              {selectedKeys.length} add-on{selectedKeys.length !== 1 ? "s" : ""} included in your plan
-            </div>
-            <div style={{ fontSize: "12px", color: COLORS.stone, marginTop: "2px" }}>
-              These will be sourced and shipped once vendor purchasing is live. Pricing TBD — we'll confirm before charging.
-            </div>
+            <div style={{ fontSize: "13px", fontWeight: "700", color: COLORS.cream }}>Total one-time add-ons</div>
+            <div style={{ fontSize: "12px", color: COLORS.stone, marginTop: "2px" }}>Containers + {selectedItems.length} equipment item{selectedItems.length !== 1 ? "s" : ""} · billed separately from monthly food</div>
+          </div>
+          <div style={{ textAlign: "right" }}>
+            <div style={{ fontSize: "22px", fontWeight: "700", color: COLORS.cream, fontFamily: "Georgia, serif" }}>Est. ${containerTotal + equipTotal}</div>
+            <div style={{ fontSize: "10px", color: COLORS.clay, fontFamily: "'Helvetica Neue', sans-serif" }}>Est. retail · final pricing at fulfillment</div>
           </div>
         </div>
       )}
 
-      {/* Category grid */}
-      {CATEGORIES.map(cat => {
-        const catSelected = cat.items.filter(i => localEquip[i.key]);
-        const catUnselected = cat.items.filter(i => !localEquip[i.key]);
-        // Only show category if it has selected items, or if not preview
-        if (isPreview && catSelected.length === 0) return null;
-
-        return (
-          <div key={cat.title} style={{ background: COLORS.white, border: `1px solid ${COLORS.mist}`, borderRadius: "10px", marginBottom: "10px", overflow: "hidden" }}>
-            {/* Category header */}
-            <div style={{ padding: "12px 18px", borderBottom: `1px solid ${COLORS.mist}`, display: "flex", alignItems: "center", gap: "10px", background: COLORS.cream }}>
-              <span style={{ fontSize: "16px" }}>{cat.icon}</span>
-              <span style={{ fontSize: "12px", fontWeight: "700", letterSpacing: "0.5px", color: COLORS.bark, fontFamily: "'Helvetica Neue', sans-serif" }}>{cat.title}</span>
-              {catSelected.length > 0 && (
-                <span style={{ fontSize: "10px", background: `${COLORS.moss}20`, color: COLORS.moss, padding: "2px 8px", borderRadius: "10px", fontWeight: "700", fontFamily: "'Helvetica Neue', sans-serif" }}>
-                  {catSelected.length} selected
-                </span>
-              )}
-            </div>
-
-            {/* Items */}
-            {cat.items.map(item => {
-              const isSelected = !!localEquip[item.key];
-              const isSaving   = saving === item.key;
-              return (
-                <div
-                  key={item.key}
-                  onClick={() => toggle(item.key)}
-                  style={{
-                    display: "flex", alignItems: "center", justifyContent: "space-between",
-                    padding: "12px 18px", borderBottom: `1px solid ${COLORS.mist}`,
-                    cursor: isPreview ? "default" : "pointer",
-                    background: isSelected ? `${COLORS.moss}08` : "transparent",
-                    opacity: isPreview && !isSelected ? 0.5 : 1,
-                  }}
-                >
-                  <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                    <div style={{
-                      width: "18px", height: "18px", borderRadius: "4px", flexShrink: 0,
-                      border: `2px solid ${isSelected ? COLORS.moss : COLORS.mist}`,
-                      background: isSelected ? COLORS.moss : "transparent",
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                    }}>
-                      {isSelected && <span style={{ color: COLORS.white, fontSize: "11px", fontWeight: "700" }}>✓</span>}
-                    </div>
-                    <div>
-                      <div style={{ fontSize: "13px", fontWeight: isSelected ? "600" : "400", color: COLORS.bark, fontFamily: "'Helvetica Neue', sans-serif" }}>{item.label}</div>
-                      <div style={{ fontSize: "11px", color: COLORS.stone, fontFamily: "'Helvetica Neue', sans-serif" }}>{item.desc}</div>
-                    </div>
-                  </div>
-                  <div style={{ fontSize: "11px", color: COLORS.stone, fontFamily: "'Helvetica Neue', sans-serif", whiteSpace: "nowrap", marginLeft: "12px" }}>
-                    {isSaving ? "Saving…" : isSelected ? <span style={{ color: COLORS.moss, fontWeight: "600" }}>Added</span> : isPreview ? "" : "+ Add"}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        );
-      })}
-
-      {/* Empty state for preview with nothing selected */}
-      {isPreview && selectedKeys.length === 0 && (
-        <div style={{ background: COLORS.white, border: `1px solid ${COLORS.mist}`, borderRadius: "10px", padding: "32px", textAlign: "center" }}>
-          <div style={{ fontSize: "24px", marginBottom: "8px" }}>🛠️</div>
-          <div style={{ fontSize: "14px", fontWeight: "600", color: COLORS.bark, marginBottom: "6px" }}>No equipment add-ons selected</div>
-          <div style={{ fontSize: "13px", color: COLORS.stone, fontFamily: "'Helvetica Neue', sans-serif" }}>
-            Activate your plan to add emergency equipment to your shipments.
-          </div>
+      {/* Add / remove items section */}
+      <div style={{ marginTop: "8px" }}>
+        <div style={{ fontSize: "11px", letterSpacing: "2px", textTransform: "uppercase", color: COLORS.stone, fontFamily: "'Helvetica Neue', sans-serif", marginBottom: "12px" }}>
+          {isPreview ? "Selected during setup" : "Manage add-ons"}
         </div>
-      )}
+        {cats.map(cat => {
+          const catItems   = EQUIPMENT_CATALOG.filter(i => i.cat === cat);
+          const catIcon    = catItems[0]?.catIcon || "📦";
+          const catSelected = catItems.filter(i => localEquip[i.key]);
+          if (isPreview && catSelected.length === 0) return null;
+
+          return (
+            <div key={cat} style={{ background: COLORS.white, border: `1px solid ${COLORS.mist}`, borderRadius: "10px", marginBottom: "10px", overflow: "hidden" }}>
+              <div style={{ padding: "12px 18px", borderBottom: `1px solid ${COLORS.mist}`, display: "flex", alignItems: "center", gap: "10px", background: COLORS.cream }}>
+                <span style={{ fontSize: "16px" }}>{catIcon}</span>
+                <span style={{ fontSize: "12px", fontWeight: "700", letterSpacing: "0.5px", color: COLORS.bark, fontFamily: "'Helvetica Neue', sans-serif" }}>{cat}</span>
+                {catSelected.length > 0 && (
+                  <span style={{ fontSize: "10px", background: `${COLORS.moss}20`, color: COLORS.moss, padding: "2px 8px", borderRadius: "10px", fontWeight: "700", fontFamily: "'Helvetica Neue', sans-serif" }}>
+                    {catSelected.length} selected
+                  </span>
+                )}
+              </div>
+              {catItems.map(item => {
+                const isSelected = !!localEquip[item.key];
+                const isSaving   = saving === item.key;
+                const shipNum    = ship1Items.find(i => i.key === item.key) ? 1 : ship2Items.find(i => i.key === item.key) ? 2 : null;
+                return (
+                  <div
+                    key={item.key}
+                    onClick={() => toggle(item.key)}
+                    style={{
+                      display: "flex", alignItems: "center", justifyContent: "space-between",
+                      padding: "12px 18px", borderBottom: `1px solid ${COLORS.mist}`,
+                      cursor: isPreview ? "default" : "pointer",
+                      background: isSelected ? `${COLORS.moss}08` : "transparent",
+                      opacity: isPreview && !isSelected ? 0.5 : 1,
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                      <div style={{
+                        width: "18px", height: "18px", borderRadius: "4px", flexShrink: 0,
+                        border: `2px solid ${isSelected ? COLORS.moss : COLORS.mist}`,
+                        background: isSelected ? COLORS.moss : "transparent",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                      }}>
+                        {isSelected && <span style={{ color: COLORS.white, fontSize: "11px", fontWeight: "700" }}>✓</span>}
+                      </div>
+                      <div>
+                        <div style={{ fontSize: "13px", fontWeight: isSelected ? "600" : "400", color: COLORS.bark, fontFamily: "'Helvetica Neue', sans-serif" }}>{item.label}</div>
+                        <div style={{ fontSize: "11px", color: COLORS.stone, fontFamily: "'Helvetica Neue', sans-serif" }}>{item.desc}</div>
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: "12px", flexShrink: 0, marginLeft: "12px" }}>
+                      <div style={{ textAlign: "right" }}>
+                        <div style={{ fontSize: "13px", fontWeight: "700", color: COLORS.bark, fontFamily: "'Helvetica Neue', sans-serif" }}>${item.price}</div>
+                        <div style={{ fontSize: "10px", color: COLORS.clay, fontFamily: "'Helvetica Neue', sans-serif" }}>Est.</div>
+                      </div>
+                      {isSelected && shipNum && (
+                        <span style={{ fontSize: "10px", background: shipNum === 1 ? `${COLORS.moss}20` : `${COLORS.clay}20`, color: shipNum === 1 ? COLORS.moss : COLORS.clay, padding: "2px 8px", borderRadius: "10px", fontWeight: "700", fontFamily: "'Helvetica Neue', sans-serif", whiteSpace: "nowrap" }}>
+                          Ship {shipNum}
+                        </span>
+                      )}
+                      <div style={{ fontSize: "11px", color: COLORS.stone, fontFamily: "'Helvetica Neue', sans-serif", minWidth: "50px", textAlign: "right" }}>
+                        {isSaving ? "Saving…" : isSelected ? <span style={{ color: COLORS.moss, fontWeight: "600" }}>Added</span> : isPreview ? "" : <span style={{ color: COLORS.stone }}>+ Add</span>}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })}
+        {isPreview && selectedItems.length === 0 && (
+          <div style={{ background: COLORS.white, border: `1px solid ${COLORS.mist}`, borderRadius: "10px", padding: "32px", textAlign: "center" }}>
+            <div style={{ fontSize: "24px", marginBottom: "8px" }}>🛠️</div>
+            <div style={{ fontSize: "14px", fontWeight: "600", color: COLORS.bark, marginBottom: "6px" }}>No equipment add-ons selected</div>
+            <div style={{ fontSize: "13px", color: COLORS.stone, fontFamily: "'Helvetica Neue', sans-serif" }}>Activate your plan to add emergency equipment to your shipments.</div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -3117,6 +3188,27 @@ function PlanTab({ customer, formData, authToken, isPreview, onActivate }) {
   // Build month list — Month 1 is always shown, rest locked in preview
   const allMonths = Array.from({ length: fulfillMonths }, (_, i) => i + 1);
 
+  // ── Shipment extras (containers + equipment) for accordion ──
+  const equipmentSelected = EQUIPMENT_CATALOG.filter(i => (formData?.preferences?.equipment || {})[i.key]);
+  const equipMidpoint     = Math.ceil(equipmentSelected.length / 2);
+  const equipShip1        = equipmentSelected.slice(0, equipMidpoint);
+  const equipShip2        = equipmentSelected.slice(equipMidpoint);
+  const cTier             = formData?.containerTier || "good";
+  const cLabel            = { good: "Essential", better: "Premium", best: "Professional" }[cTier] || "Essential";
+  const cVol              = { good: 0.57, better: 1.71, best: 2.05 }[cTier] || 0.57;
+  const cVolPPM           = { wholeFood: 2.2, balanced: 1.9, freezeDried: 1.4, noPreference: 1.6 }[philosophy] || 1.9;
+  const cCount            = Math.ceil((totalPeople * cVolPPM * months) / cVol);
+  const cUnitPrice        = CONTAINER_PRICES[cTier] || 8;
+
+  // What non-food extras ship in each month
+  const shipmentExtras = {
+    1: [
+      { label: `${cCount}× ${cLabel} storage containers`, price: cCount * cUnitPrice, icon: "📦" },
+      ...equipShip1.map(i => ({ label: i.label, price: i.price, icon: "🛠️" })),
+    ],
+    2: equipShip2.map(i => ({ label: i.label, price: i.price, icon: "🛠️" })),
+  };
+
   // Status of each month (fulfilled / in-progress / projected)
   // orders are sorted ascending by created_at from the server — index 0 = month 1
   const getMonthStatus = (m) => {
@@ -3138,6 +3230,7 @@ function PlanTab({ customer, formData, authToken, isPreview, onActivate }) {
     const isOpen   = openMonth === monthNum;
     const status   = getMonthStatus(monthNum);
     const sc       = statusColors[status];
+    const extras   = shipmentExtras[monthNum] || [];
 
     return (
       <div style={{ border: `1px solid ${COLORS.mist}`, borderRadius: "10px", marginBottom: "8px", background: COLORS.white, overflow: "hidden" }}>
@@ -3188,6 +3281,22 @@ function PlanTab({ customer, formData, authToken, isPreview, onActivate }) {
             {status === "projected" && (
               <div style={{ marginTop: "10px", fontSize: "11px", color: COLORS.stone, fontFamily: "'Helvetica Neue', sans-serif", fontStyle: "italic" }}>
                 * Quantities and items may adjust based on current pricing and availability at time of fulfillment.
+              </div>
+            )}
+
+            {/* Non-food extras for this shipment */}
+            {extras.length > 0 && (
+              <div style={{ marginTop: "16px", paddingTop: "14px", borderTop: `1px solid ${COLORS.mist}` }}>
+                <div style={{ fontSize: "10px", letterSpacing: "2.5px", textTransform: "uppercase", color: COLORS.clay, fontFamily: "'Helvetica Neue', sans-serif", marginBottom: "8px" }}>Also in this shipment</div>
+                {extras.map((ex, i) => (
+                  <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "5px 8px", borderBottom: `1px solid ${COLORS.cream}`, fontSize: "13px", fontFamily: "'Helvetica Neue', sans-serif" }}>
+                    <span style={{ color: COLORS.bark }}>{ex.icon} {ex.label}</span>
+                    <span style={{ fontWeight: "700", color: COLORS.clay, whiteSpace: "nowrap", marginLeft: "12px" }}>Est. ${ex.price}</span>
+                  </div>
+                ))}
+                <div style={{ fontSize: "11px", color: COLORS.stone, fontFamily: "'Helvetica Neue', sans-serif", marginTop: "6px", fontStyle: "italic" }}>
+                  * Equipment & container costs billed separately from monthly food budget.
+                </div>
               </div>
             )}
           </div>
