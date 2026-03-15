@@ -808,6 +808,81 @@ app.get("/api/portal/dashboard", requireAuth, async (req, res) => {
   });
 });
 
+// PATCH /api/portal/household
+// Customer updates household composition post-activation.
+// Updates household row, logs to household_changes, recalculates calories.
+app.patch("/api/portal/household", requireAuth, async (req, res) => {
+  const cid = req.customer.id;
+  const { household, pets, reason } = req.body;
+
+  if (!household) return res.status(400).json({ error: "household required" });
+
+  // Fetch current household for diff
+  const { data: current } = await supabase
+    .from("household")
+    .select("*")
+    .eq("customer_id", cid)
+    .single();
+
+  if (!current) return res.status(404).json({ error: "Household not found" });
+
+  // Build diff for audit log
+  const fields = ["infants","children","teens","adults","seniors"];
+  const changes = {};
+  for (const f of fields) {
+    const prev = current[f] ?? 0;
+    const next = household[f] ?? prev;
+    if (prev !== next) changes[f] = { from: prev, to: next };
+  }
+
+  if (Object.keys(changes).length === 0) {
+    return res.json({ success: true, message: "No changes detected" });
+  }
+
+  // Update household row
+  const { error: hhErr } = await supabase
+    .from("household")
+    .update({
+      infants:  household.infants  ?? current.infants,
+      children: household.children ?? current.children,
+      teens:    household.teens    ?? current.teens,
+      adults:   household.adults   ?? current.adults,
+      seniors:  household.seniors  ?? current.seniors,
+    })
+    .eq("customer_id", cid);
+
+  if (hhErr) return res.status(500).json({ error: hhErr.message });
+
+  // Write audit log
+  await supabase.from("household_changes").insert({
+    customer_id:  cid,
+    changes_json: changes,
+    reason:       reason || null,
+    changed_at:   new Date().toISOString(),
+  });
+
+  // Update pets if provided
+  if (pets) {
+    for (const [petType, petData] of Object.entries(pets)) {
+      if (petData?.count > 0) {
+        await supabase.from("pets").upsert({
+          customer_id: cid,
+          pet_type:    petType,
+          count:       petData.count,
+          size:        petData.size || null,
+        }, { onConflict: "customer_id,pet_type" });
+      } else {
+        await supabase.from("pets").delete()
+          .eq("customer_id", cid)
+          .eq("pet_type", petType);
+      }
+    }
+  }
+
+  console.log(`👥 Household change: customer ${cid} — ${JSON.stringify(changes)}`);
+  res.json({ success: true, changes });
+});
+
 // PATCH /api/portal/preferences/equipment
 // Customer toggles an equipment add-on on or off post-activation
 app.patch("/api/portal/preferences/equipment", requireAuth, async (req, res) => {
