@@ -332,6 +332,38 @@ app.post("/api/auth/login", async (req, res) => {
 
 
 // ============================================================
+// ADMIN AUTH
+// POST /api/admin/login — email+password, must be in admin_users
+// GET  /api/admin/me    — verify token + return admin record
+// ============================================================
+app.post("/api/admin/login", async (req, res) => {
+  const { email, password } = req.body;
+  if (!email || !password) return res.status(400).json({ error: "Email and password required." });
+  try {
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error || !data?.session) return res.status(401).json({ error: "Invalid email or password." });
+
+    const { data: admin } = await supabase
+      .from("admin_users")
+      .select("*")
+      .eq("auth_user_id", data.user.id)
+      .single();
+
+    if (!admin) return res.status(403).json({ error: "Not an admin account." });
+
+    console.log(`🔐 Admin login: ${email}`);
+    return res.json({ accessToken: data.session.access_token, admin });
+  } catch (err) {
+    console.error("Admin login error:", err);
+    return res.status(500).json({ error: "Server error." });
+  }
+});
+
+app.get("/api/admin/me", requireAdmin, async (req, res) => {
+  res.json({ admin: req.admin });
+});
+
+// ============================================================
 // AUTH — Set password after magic link
 // POST /api/auth/set-password
 // Customer provides their new password. We call Supabase to

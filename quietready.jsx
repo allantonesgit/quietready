@@ -3594,6 +3594,319 @@ function LandingPage({ onStart }) {
   );
 }
 
+// ─── ADMIN SCREEN ─────────────────────────────────────────────────────────────
+
+function AdminScreen({ onLogout }) {
+  const [adminToken, setAdminToken]   = useState(() => localStorage.getItem("qr_admin_token") || null);
+  const [loginEmail, setLoginEmail]   = useState("");
+  const [loginPass,  setLoginPass]    = useState("");
+  const [loginErr,   setLoginErr]     = useState("");
+  const [logging,    setLogging]      = useState(false);
+
+  const [cbiData,      setCbiData]      = useState([]);
+  const [customers,    setCustomers]    = useState([]);
+  const [loading,      setLoading]      = useState(false);
+  const [activeTab,    setActiveTab]    = useState("cbi");
+
+  const adminFetch = (url, opts = {}) =>
+    fetch(url, { ...opts, headers: { "Authorization": `Bearer ${adminToken}`, "Content-Type": "application/json", ...(opts.headers || {}) } });
+
+  // Load dashboard data when token available
+  useEffect(() => {
+    if (!adminToken) return;
+    setLoading(true);
+    Promise.all([
+      adminFetch("/api/admin/cbi/latest").then(r => r.json()),
+      adminFetch("/api/admin/customers").then(r => r.json()),
+    ]).then(([cbi, custs]) => {
+      if (cbi?.error) { localStorage.removeItem("qr_admin_token"); setAdminToken(null); return; }
+      setCbiData(Array.isArray(cbi) ? [...cbi].reverse() : []);   // oldest first for chart
+      setCustomers(Array.isArray(custs) ? custs : (custs?.customers || []));
+    }).catch(console.error).finally(() => setLoading(false));
+  }, [adminToken]);
+
+  const handleLogin = async () => {
+    setLogging(true); setLoginErr("");
+    try {
+      const res  = await fetch("/api/admin/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: loginEmail, password: loginPass }) });
+      const data = await res.json();
+      if (!res.ok) { setLoginErr(data.error || "Login failed"); return; }
+      localStorage.setItem("qr_admin_token", data.accessToken);
+      setAdminToken(data.accessToken);
+    } catch { setLoginErr("Network error"); }
+    finally { setLogging(false); }
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem("qr_admin_token");
+    setAdminToken(null);
+    setCbiData([]); setCustomers([]);
+  };
+
+  // ── Login wall ──────────────────────────────────────────────
+  if (!adminToken) {
+    return (
+      <div style={{ minHeight: "100vh", background: COLORS.bark, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Helvetica Neue', sans-serif" }}>
+        <div style={{ background: COLORS.cream, borderRadius: "12px", padding: "48px", width: "360px", boxShadow: "0 24px 64px rgba(0,0,0,0.4)" }}>
+          <div style={{ fontSize: "11px", letterSpacing: "4px", textTransform: "uppercase", color: COLORS.clay, marginBottom: "8px" }}>QuietReady</div>
+          <div style={{ fontSize: "24px", fontWeight: "700", color: COLORS.bark, marginBottom: "32px", fontFamily: "Georgia, serif" }}>Admin Access</div>
+          <div style={{ marginBottom: "16px" }}>
+            <div style={{ fontSize: "11px", fontWeight: "600", letterSpacing: "1px", color: COLORS.stone, marginBottom: "6px", textTransform: "uppercase" }}>Email</div>
+            <input
+              type="email" value={loginEmail} onChange={e => setLoginEmail(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && handleLogin()}
+              style={{ width: "100%", padding: "10px 14px", border: `1px solid ${COLORS.mist}`, borderRadius: "6px", fontSize: "14px", background: COLORS.white, color: COLORS.bark, outline: "none", boxSizing: "border-box" }}
+            />
+          </div>
+          <div style={{ marginBottom: "24px" }}>
+            <div style={{ fontSize: "11px", fontWeight: "600", letterSpacing: "1px", color: COLORS.stone, marginBottom: "6px", textTransform: "uppercase" }}>Password</div>
+            <input
+              type="password" value={loginPass} onChange={e => setLoginPass(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && handleLogin()}
+              style={{ width: "100%", padding: "10px 14px", border: `1px solid ${COLORS.mist}`, borderRadius: "6px", fontSize: "14px", background: COLORS.white, color: COLORS.bark, outline: "none", boxSizing: "border-box" }}
+            />
+          </div>
+          {loginErr && <div style={{ color: "#C45A4A", fontSize: "13px", marginBottom: "16px" }}>{loginErr}</div>}
+          <button
+            onClick={handleLogin} disabled={logging}
+            style={{ width: "100%", background: COLORS.moss, color: COLORS.white, border: "none", padding: "12px", borderRadius: "6px", fontSize: "13px", fontWeight: "600", cursor: "pointer", letterSpacing: "1px", textTransform: "uppercase" }}
+          >
+            {logging ? "Signing in…" : "Sign In"}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── CBI Chart (SVG, no deps) ────────────────────────────────
+  const CbiChart = () => {
+    if (!cbiData.length) return <div style={{ color: COLORS.stone, fontSize: "14px", padding: "40px", textAlign: "center" }}>No CBI data yet.</div>;
+
+    const W = 700, H = 220, PAD = { top: 20, right: 20, bottom: 40, left: 64 };
+    const innerW = W - PAD.left - PAD.right;
+    const innerH = H - PAD.top  - PAD.bottom;
+
+    const cpcs    = cbiData.map(d => d.raw_prices?.today_cpc ?? d.cbi_value * 0.003821 / 100);
+    const minCpc  = Math.min(...cpcs) * 0.995;
+    const maxCpc  = Math.max(...cpcs) * 1.005;
+    const xStep   = cbiData.length > 1 ? innerW / (cbiData.length - 1) : innerW;
+
+    const toX = i  => PAD.left + i * xStep;
+    const toY = v  => PAD.top + innerH - ((v - minCpc) / (maxCpc - minCpc)) * innerH;
+
+    const linePath = cpcs.map((v, i) => `${i === 0 ? "M" : "L"}${toX(i).toFixed(1)},${toY(v).toFixed(1)}`).join(" ");
+    const areaPath = linePath + ` L${toX(cpcs.length - 1).toFixed(1)},${(PAD.top + innerH).toFixed(1)} L${PAD.left.toFixed(1)},${(PAD.top + innerH).toFixed(1)} Z`;
+
+    // Y axis ticks
+    const yTicks = 4;
+    const yTickVals = Array.from({ length: yTicks + 1 }, (_, i) => minCpc + (maxCpc - minCpc) * (i / yTicks));
+
+    // X axis labels — show first, middle, last
+    const xLabelIdxs = cbiData.length <= 7
+      ? cbiData.map((_, i) => i)
+      : [0, Math.floor((cbiData.length - 1) / 2), cbiData.length - 1];
+
+    const launch_cpc = cbiData[0]?.raw_prices?.launch_cpc;
+    const launchY    = launch_cpc ? toY(launch_cpc) : null;
+
+    return (
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto", overflow: "visible" }}>
+        <defs>
+          <linearGradient id="cbiGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%"   stopColor={COLORS.moss} stopOpacity="0.25" />
+            <stop offset="100%" stopColor={COLORS.moss} stopOpacity="0.02" />
+          </linearGradient>
+        </defs>
+
+        {/* Grid lines */}
+        {yTickVals.map((v, i) => (
+          <g key={i}>
+            <line x1={PAD.left} y1={toY(v)} x2={PAD.left + innerW} y2={toY(v)} stroke={COLORS.mist} strokeWidth="1" />
+            <text x={PAD.left - 8} y={toY(v) + 4} textAnchor="end" fontSize="10" fill={COLORS.stone} fontFamily="'Helvetica Neue', sans-serif">
+              {v.toFixed(6)}
+            </text>
+          </g>
+        ))}
+
+        {/* Launch baseline */}
+        {launchY && (
+          <g>
+            <line x1={PAD.left} y1={launchY} x2={PAD.left + innerW} y2={launchY} stroke={COLORS.clay} strokeWidth="1" strokeDasharray="4 3" />
+            <text x={PAD.left + innerW + 4} y={launchY + 4} fontSize="9" fill={COLORS.clay} fontFamily="'Helvetica Neue', sans-serif">launch</text>
+          </g>
+        )}
+
+        {/* Area fill */}
+        <path d={areaPath} fill="url(#cbiGrad)" />
+
+        {/* Line */}
+        <path d={linePath} fill="none" stroke={COLORS.moss} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+
+        {/* Data points */}
+        {cpcs.map((v, i) => (
+          <circle key={i} cx={toX(i)} cy={toY(v)} r="3" fill={COLORS.moss} />
+        ))}
+
+        {/* X axis labels */}
+        {xLabelIdxs.map(i => (
+          <text key={i} x={toX(i)} y={H - 6} textAnchor="middle" fontSize="10" fill={COLORS.stone} fontFamily="'Helvetica Neue', sans-serif">
+            {cbiData[i].basis_date?.slice(5)}
+          </text>
+        ))}
+      </svg>
+    );
+  };
+
+  // ── Latest CBI stats ────────────────────────────────────────
+  const latest   = cbiData[cbiData.length - 1];
+  const prev     = cbiData[cbiData.length - 2];
+  const latestCpc = latest?.raw_prices?.today_cpc ?? null;
+  const prevCpc   = prev?.raw_prices?.today_cpc   ?? null;
+  const cpcDelta  = latestCpc && prevCpc ? ((latestCpc - prevCpc) / prevCpc * 100).toFixed(2) : null;
+  const launchCpc = cbiData[0]?.raw_prices?.launch_cpc ?? null;
+  const launchDelta = latestCpc && launchCpc ? ((latestCpc - launchCpc) / launchCpc * 100).toFixed(2) : null;
+
+  const statBox = (label, value, sub, subColor) => (
+    <div style={{ background: COLORS.white, border: `1px solid ${COLORS.mist}`, borderRadius: "10px", padding: "20px 24px", flex: "1", minWidth: "140px" }}>
+      <div style={{ fontSize: "11px", letterSpacing: "2px", textTransform: "uppercase", color: COLORS.stone, marginBottom: "8px", fontFamily: "'Helvetica Neue', sans-serif" }}>{label}</div>
+      <div style={{ fontSize: "22px", fontWeight: "700", color: COLORS.bark, fontFamily: "Georgia, serif" }}>{value}</div>
+      {sub && <div style={{ fontSize: "12px", color: subColor || COLORS.stone, marginTop: "4px", fontFamily: "'Helvetica Neue', sans-serif" }}>{sub}</div>}
+    </div>
+  );
+
+  // ── Tabs ─────────────────────────────────────────────────────
+  const TAB_STYLE = (active) => ({
+    fontSize: "12px", fontWeight: "600", letterSpacing: "1px", textTransform: "uppercase",
+    padding: "8px 20px", cursor: "pointer", fontFamily: "'Helvetica Neue', sans-serif",
+    borderBottom: active ? `2px solid ${COLORS.moss}` : "2px solid transparent",
+    color: active ? COLORS.moss : COLORS.stone, background: "none", border: "none",
+    borderBottom: active ? `2px solid ${COLORS.moss}` : "2px solid transparent",
+  });
+
+  return (
+    <div style={{ minHeight: "100vh", background: COLORS.cream, fontFamily: "'Helvetica Neue', sans-serif" }}>
+      {/* Nav */}
+      <div style={{ background: COLORS.bark, padding: "0 32px", display: "flex", alignItems: "center", justifyContent: "space-between", height: "56px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+          <div style={{ fontSize: "14px", fontWeight: "700", color: COLORS.cream, fontFamily: "Georgia, serif", letterSpacing: "-0.3px" }}>QuietReady</div>
+          <div style={{ fontSize: "10px", letterSpacing: "3px", textTransform: "uppercase", color: COLORS.stone, paddingLeft: "12px", borderLeft: `1px solid ${COLORS.stone}40` }}>Admin</div>
+        </div>
+        <button onClick={handleLogout} style={{ background: "none", border: `1px solid ${COLORS.stone}40`, color: COLORS.stone, padding: "6px 16px", borderRadius: "4px", fontSize: "11px", cursor: "pointer", letterSpacing: "1px", textTransform: "uppercase" }}>
+          Sign Out
+        </button>
+      </div>
+
+      {/* Tabs */}
+      <div style={{ background: COLORS.white, borderBottom: `1px solid ${COLORS.mist}`, padding: "0 32px", display: "flex", gap: "4px" }}>
+        {[["cbi", "📈 CBI Prices"], ["customers", "👥 Customers"]].map(([key, label]) => (
+          <button key={key} style={TAB_STYLE(activeTab === key)} onClick={() => setActiveTab(key)}>{label}</button>
+        ))}
+      </div>
+
+      <div style={{ maxWidth: "960px", margin: "0 auto", padding: "32px 24px" }}>
+        {loading && <div style={{ color: COLORS.stone, fontSize: "14px", textAlign: "center", padding: "60px" }}>Loading…</div>}
+
+        {/* ── CBI Tab ── */}
+        {!loading && activeTab === "cbi" && (
+          <div>
+            <div style={{ marginBottom: "24px" }}>
+              <div style={{ fontSize: "11px", letterSpacing: "3px", textTransform: "uppercase", color: COLORS.clay, marginBottom: "6px" }}>Cost Basis Index</div>
+              <div style={{ fontSize: "26px", fontWeight: "700", color: COLORS.bark, fontFamily: "Georgia, serif", letterSpacing: "-0.8px" }}>Price-per-Calorie History</div>
+              <div style={{ fontSize: "13px", color: COLORS.stone, marginTop: "4px" }}>Kroger store-brand basket · updated daily 3am UTC</div>
+            </div>
+
+            {/* Stat row */}
+            <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", marginBottom: "24px" }}>
+              {statBox("Today CPC", latestCpc ? `$${latestCpc.toFixed(6)}` : "—", cpcDelta ? `${cpcDelta > 0 ? "▲" : "▼"} ${Math.abs(cpcDelta)}% vs yesterday` : null, parseFloat(cpcDelta) > 0 ? COLORS.clay : COLORS.moss)}
+              {statBox("Launch CPC", launchCpc ? `$${launchCpc.toFixed(6)}` : "—", "2026-03-14 baseline")}
+              {statBox("Change vs Launch", launchDelta ? `${launchDelta > 0 ? "+" : ""}${launchDelta}%` : "—", launchDelta > 0 ? "Prices up since launch" : "Prices down since launch", parseFloat(launchDelta) > 0 ? COLORS.clay : COLORS.moss)}
+              {statBox("Days Tracked", cbiData.length, `${cbiData[0]?.basis_date ?? "—"} → ${latest?.basis_date ?? "—"}`)}
+            </div>
+
+            {/* Chart */}
+            <div style={{ background: COLORS.white, border: `1px solid ${COLORS.mist}`, borderRadius: "12px", padding: "24px 24px 16px" }}>
+              <div style={{ fontSize: "12px", fontWeight: "600", letterSpacing: "1px", textTransform: "uppercase", color: COLORS.stone, marginBottom: "16px" }}>$/kcal over time</div>
+              <CbiChart />
+            </div>
+
+            {/* Raw data table */}
+            <div style={{ marginTop: "20px", background: COLORS.white, border: `1px solid ${COLORS.mist}`, borderRadius: "12px", overflow: "hidden" }}>
+              <div style={{ padding: "16px 20px", borderBottom: `1px solid ${COLORS.mist}`, fontSize: "12px", fontWeight: "600", letterSpacing: "1px", textTransform: "uppercase", color: COLORS.stone }}>Daily Log</div>
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px", fontFamily: "'Helvetica Neue', sans-serif" }}>
+                  <thead>
+                    <tr style={{ background: COLORS.cream }}>
+                      {["Date", "CBI Value", "CPC ($/kcal)", "vs Launch"].map(h => (
+                        <th key={h} style={{ padding: "10px 16px", textAlign: "left", color: COLORS.stone, fontWeight: "600", letterSpacing: "0.5px", borderBottom: `1px solid ${COLORS.mist}` }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[...cbiData].reverse().map((row, i) => {
+                      const cpc  = row.raw_prices?.today_cpc;
+                      const base = row.raw_prices?.launch_cpc ?? launchCpc;
+                      const pct  = cpc && base ? ((cpc - base) / base * 100).toFixed(2) : null;
+                      return (
+                        <tr key={i} style={{ borderBottom: `1px solid ${COLORS.mist}`, background: i === 0 ? `${COLORS.moss}08` : "transparent" }}>
+                          <td style={{ padding: "10px 16px", color: COLORS.bark, fontWeight: i === 0 ? "700" : "400" }}>{row.basis_date}{i === 0 && <span style={{ marginLeft: "8px", fontSize: "10px", color: COLORS.moss, fontWeight: "600" }}>TODAY</span>}</td>
+                          <td style={{ padding: "10px 16px", color: COLORS.bark }}>{row.cbi_value?.toFixed(2)}</td>
+                          <td style={{ padding: "10px 16px", color: COLORS.bark, fontFamily: "monospace" }}>{cpc ? `$${cpc.toFixed(6)}` : "—"}</td>
+                          <td style={{ padding: "10px 16px", color: pct > 0 ? COLORS.clay : pct < 0 ? COLORS.moss : COLORS.stone }}>{pct ? `${pct > 0 ? "+" : ""}${pct}%` : "—"}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Customers Tab ── */}
+        {!loading && activeTab === "customers" && (
+          <div>
+            <div style={{ marginBottom: "24px" }}>
+              <div style={{ fontSize: "11px", letterSpacing: "3px", textTransform: "uppercase", color: COLORS.clay, marginBottom: "6px" }}>Directory</div>
+              <div style={{ fontSize: "26px", fontWeight: "700", color: COLORS.bark, fontFamily: "Georgia, serif", letterSpacing: "-0.8px" }}>Customers</div>
+              <div style={{ fontSize: "13px", color: COLORS.stone, marginTop: "4px" }}>{customers.length} total</div>
+            </div>
+            <div style={{ background: COLORS.white, border: `1px solid ${COLORS.mist}`, borderRadius: "12px", overflow: "hidden" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
+                <thead>
+                  <tr style={{ background: COLORS.cream }}>
+                    {["Name", "Email", "Status", "Activated", "Budget"].map(h => (
+                      <th key={h} style={{ padding: "12px 16px", textAlign: "left", color: COLORS.stone, fontSize: "11px", fontWeight: "600", letterSpacing: "1px", textTransform: "uppercase", borderBottom: `1px solid ${COLORS.mist}` }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {customers.map((c, i) => {
+                    const statusColor = { active: COLORS.moss, preview: COLORS.clay, paused: COLORS.stone, cancelled: "#C45A4A" }[c.status] || COLORS.stone;
+                    return (
+                      <tr key={i} style={{ borderBottom: `1px solid ${COLORS.mist}` }}>
+                        <td style={{ padding: "12px 16px", color: COLORS.bark, fontWeight: "600" }}>{c.full_name || "—"}</td>
+                        <td style={{ padding: "12px 16px", color: COLORS.stone, fontFamily: "monospace", fontSize: "12px" }}>{c.email}</td>
+                        <td style={{ padding: "12px 16px" }}>
+                          <span style={{ background: `${statusColor}18`, color: statusColor, padding: "3px 10px", borderRadius: "20px", fontSize: "11px", fontWeight: "600", letterSpacing: "0.5px" }}>{c.status}</span>
+                        </td>
+                        <td style={{ padding: "12px 16px", color: COLORS.stone, fontSize: "12px" }}>{c.activated_at ? new Date(c.activated_at).toLocaleDateString() : "—"}</td>
+                        <td style={{ padding: "12px 16px", color: COLORS.bark }}>{c.customer_preferences?.monthly_budget ? `$${c.customer_preferences.monthly_budget}/mo` : "—"}</td>
+                      </tr>
+                    );
+                  })}
+                  {customers.length === 0 && (
+                    <tr><td colSpan="5" style={{ padding: "40px", textAlign: "center", color: COLORS.stone }}>No customers yet.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── MAIN APP ─────────────────────────────────────────────────────────────────
 
 function App() {
@@ -3605,6 +3918,11 @@ function App() {
   const [submitError, setSubmitError] = useState("");
   const [email, setEmail] = useState("");
   const [fullName, setFullName] = useState("");
+
+  // Admin route — /admin path renders admin area entirely
+  if (window.location.pathname === "/admin") {
+    return <AdminScreen />;
+  }
 
   // Portal state — populated after magic link auth
   const [portalCustomer, setPortalCustomer] = useState(null);
