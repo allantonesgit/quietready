@@ -67,7 +67,7 @@ Font stack: Georgia/serif for headings, Helvetica Neue/sans-serif for body.
 
 ---
 
-## ✅ PRICING MODEL — LOCKED
+## PRICING MODEL — LOCKED
 
 | Component | Value | Notes |
 |---|---|---|
@@ -86,15 +86,9 @@ our_gross_margin        = product_budget - our_product_cost  (= 23% of product_b
 shipping                = passed through at actual carrier cost
 ```
 
-### Why 30% (not the original 10%)
-- Drop-ship model means individual order freight at retail rates (~$15-25/shipment)
-- 3.15% credit card fees on full transaction
-- No warehousing staff, but sourcing/coordination overhead
-- 30% markup keeps the business sustainable while remaining price-competitive vs customer DIY
-
 ---
 
-## ✅ SUPPLIER STRATEGY — DECIDED
+## SUPPLIER STRATEGY — DECIDED
 
 ### Model: Vendor-agnostic purchase abstraction layer
 For each item, check multiple vendor APIs, pick lowest **landed cost** (item + shipping to customer zip), place order. Customer never knows which vendor fulfilled it.
@@ -115,7 +109,7 @@ For each item, check multiple vendor APIs, pick lowest **landed cost** (item + s
 |---|---|---|---|
 | Walmart | Affiliate + WFS API | Staples, broadest SKU, drop-ship program | Phase 6 |
 | Amazon | SP-API (Selling Partner) | Specialty items, Subscribe & Save | Phase 6 |
-| Kroger | Products API (free) | CBI price indexing only — no purchasing | ✅ Live |
+| Kroger | Products API (free) | CBI price indexing only — no purchasing | Live |
 
 **Wholesale / Emergency Supply (apply for reseller accounts)**
 | Vendor | Best for | Notes |
@@ -126,17 +120,8 @@ For each item, check multiple vendor APIs, pick lowest **landed cost** (item + s
 | My Patriot Supply | Emergency preparedness, already drop-ships for brands | Strong fit |
 | Ready Store / Nitro-Pak | Non-food emergency items | |
 
-**Non-food emergency items** (first aid kits, water treatment tabs, tools, etc.)
-| Vendor | Best for |
-|---|---|
-| Amazon SP-API | Most items at retail with good margins |
-| Bound Tree / Henry Schein | Medical/first aid wholesale |
-| Ready Store | Emergency gear wholesale |
-
 ### Minimum order thresholds
-**Not yet decided** — will discover real minimums during Phase 6 vendor API integration. Fulfillment engine will handle dynamically:
-- If customer budget < vendor minimum → batch with other customers OR route to alternate vendor
-- This is a Phase 6 problem, not a blocker for earlier phases
+Not yet decided — Phase 6 problem. Fulfillment engine will batch or reroute dynamically.
 
 ---
 
@@ -157,10 +142,10 @@ CBI_REFRESH_SECRET=84792e323978e5b56fe8bfad153543f821937405c605dada0b871ca5f3da2
 - **customers** — id, auth_user_id, email, full_name, stripe_customer_id, billing_customer_id, status, billing/shipping addresses, activated_at, login_token, login_token_expires_at, `personal_cbi`, `cbi_locked_at`, `container_payment_preference`
 - **household** — infants/children/teens/adults/seniors
 - **pets** — pet_type, count, size
-- **customer_preferences** — food philosophy, dietary restrictions, storage dims, budget, coverage months, container tier, `calories_children/teens/adults/seniors`
-- **pricing_matrix** — wizard option → cost multiplier (~40 rows seeded)
-- **price_basis** — daily CBI snapshots. Launch baseline: `launch_cpc=0.003821`, `cbi=100.0`, set 2026-03-14
-- **household_changes** — post-activation household change audit log
+- **customer_preferences** — food philosophy, dietary restrictions, storage dims, budget, coverage months, container tier, `calories_children/teens/adults/seniors`, `utilities` (JSON), `equipment` (JSON)
+- **pricing_matrix** — wizard option to cost multiplier (~40 rows seeded)
+- **price_basis** — daily CBI snapshots. Fields: `basis_date`, `cbi_value`, `raw_prices` (JSON: `today_cpc`, `launch_cpc`). Launch baseline: `launch_cpc=0.003821`, `cbi=100.0`, set 2026-03-14
+- **household_changes** — audit log. Fields: `customer_id`, `changes_json`, `reason`, `changed_at`
 - **storage_containers**, **orders**, **order_items**, **inventory_items**, **shipment_instructions**, **customer_pdfs**, **admin_users**
 
 ---
@@ -172,6 +157,7 @@ CBI_REFRESH_SECRET=84792e323978e5b56fe8bfad153543f821937405c605dada0b871ca5f3da2
 - Launch baseline: `cpc = 0.003821` ($/kcal), set 2026-03-14
 - As of 2026-03-15: `currentCpc = 0.004394` (~15% above launch baseline)
 - Dashboard returns `costIndex: { personalCbi, currentCbi, cbiChangePct, basisDate, currentCpc }`
+- **IMPORTANT:** `price_basis` select must include `raw_prices` — `currentCpc` comes from `raw_prices.today_cpc`, not `cbi_value`
 
 ### Kroger API rules (learned the hard way)
 - Store-brand search terms only — national brands return no price on free tier
@@ -181,12 +167,12 @@ CBI_REFRESH_SECRET=84792e323978e5b56fe8bfad153543f821937405c605dada0b871ca5f3da2
 
 ### Plan cost formula
 ```
-monthCost = (dailyCalories × 30) × currentCpc × philosophyMultiplier
+monthCost = (dailyCalories x 30) x currentCpc x philosophyMultiplier
 ```
 Philosophy multipliers: wholeFood=1.25, balanced=1.00, freezeDried=2.40, noPreference=0.78
 
 ### Quantity rules
-- **Calorie-driven:** grains (40% of kcal ÷ 1600/lb), protein cans (20% ÷ 200/can), legumes (10% ÷ 1600/lb), fats (15% split PB/oil)
+- **Calorie-driven:** grains (40% of kcal / 1600/lb), protein cans (20% / 200/can), legumes (10% / 1600/lb), fats (15% split PB/oil)
 - **Fixed per-person/month:** veg=4 cans, tomatoes=4, soup=4, fruit=3, dairy=3, sweeteners=1.5 lbs, water=14 gal
 
 ---
@@ -208,20 +194,36 @@ STEPS constant: `["household","caloricIntake","dietary","foodPhilosophy","storag
 ---
 
 ## Portal Screens & Structure
-- `landing` → Log In + Get Started in nav
-- `login` → email+password OR magic link → `POST /api/auth/login`
+- `landing` — Log In + Get Started in nav
+- `login` — email+password OR magic link — `POST /api/auth/login`
 - `setpassword`, `linkerror`, `questionnaire`, `portal`
 - `admin` — separate screen at `/admin` path, own login (checks `admin_users` table), token stored as `qr_admin_token`
 
-### Portal tabs: 📋 My Plan | 📦 Container Map | 💳 Billing
-- `PlanTab` — CBI-derived costs, shipment accordion, CBI banner
+### Portal tabs: My Plan | Container Map | Billing
+- `PlanTab` — CBI-derived costs, shipment accordion, CBI banner, extras section
 - `ContainerMapTab` — color-coded by category, reads `formData.containers` from DB
-- `getMonthStatus(m)` — wired to real orders; maps pending/processing→in-progress, fulfilled/shipped→fulfilled, missing→projected
+- `getMonthStatus(m)` — wired to real orders; maps pending/processing to in-progress, fulfilled/shipped to fulfilled, missing to projected
 - `formData.orders` — populated from dashboard (ascending by created_at, index 0 = month 1)
 - `formData.containers` — populated from `storage_containers` table via dashboard join
+- `Portal` uses `localFormData` state (not prop directly) so household changes reflect instantly without reload
 
-### Admin panel tabs: 📈 CBI Prices | 👥 Customers
-- CBI Tab: stat row (today CPC, launch CPC, % change, days tracked) + SVG line chart + daily log table
+### Household card (Plan Tab)
+- Active customers: clicking the Household summary card opens `HouseholdChangeModal`
+- Modal has people + pets counters, per-row change indicators (shows "prev → new"), optional reason field
+- Saves via `PATCH /api/portal/household`, updates `localFormData` immediately, plan costs recalculate
+- Preview customers: card is not clickable
+
+### Extras & Add-ons section (bottom of Plan Tab)
+- `EQUIPMENT_CATALOG` — 16 items with prices, categories, icons. Single source of truth used by both accordion and extras section.
+- `CONTAINER_PRICES` — `{ good: 8, better: 22, best: 45 }` per container (est. retail)
+- Delivery: containers always Shipment 1; equipment split first half Ship 1, remainder Ship 2
+- Month accordion shows "Also in this shipment" for months 1 and 2 with est. prices in clay
+- Active customers can toggle equipment items on/off (saves via `PATCH /api/portal/preferences/equipment`)
+- Dark bark total summary bar at bottom showing combined est. cost
+
+### Admin panel tabs: CBI Prices | Customers
+- CBI Tab: stat row (today CPC, launch CPC, % change, days tracked) + SVG line chart with launch baseline + daily log table + CBI Impact Flags widget
+- CBI Impact Flags: active customers with >=2% CBI change since enrollment. Columns: name/email, enrolled CBI, current CBI, % change badge, budget impact $/mo, monthly budget. Green all-clear state when no flags. Threshold = 2%.
 - Customers Tab: full customer list with status badges and budget
 - Add users to `admin_users` table in Supabase to grant access
 
@@ -229,13 +231,15 @@ STEPS constant: `["household","caloricIntake","dietary","foodPhilosophy","storag
 
 ## Server Endpoints (key ones)
 - `POST /api/auth/login` — password login (customers)
-- `POST /api/admin/login` — password login (admin only — checks admin_users table)
-- `GET /api/admin/me` — verify admin token + return admin record
+- `POST /api/admin/login` — password login for admins, checks admin_users table
+- `GET /api/admin/me` — verify admin token, return admin record
 - `POST /api/onboarding/submit` — creates customer, saves calories
-- `POST /api/onboarding/activate` — preview→active, snapshots CBI
+- `POST /api/onboarding/activate` — preview to active, snapshots CBI
 - `GET /api/portal/dashboard` — returns costIndex, containers, orders (ascending), household, prefs, pets, inventory, pdfs, pendingInstructions
+- `PATCH /api/portal/household` — update household + pets post-activation, writes to household_changes audit log
+- `PATCH /api/portal/preferences/equipment` — toggle single equipment add-on, merges into equipment JSON
 - `POST /api/admin/cbi/refresh` — Kroger price fetch, updates price_basis
-- `GET /api/admin/cbi/latest` — last 30 days CBI (raw_prices included)
+- `GET /api/admin/cbi/latest` — last 30 days CBI with raw_prices
 
 ---
 
@@ -245,8 +249,9 @@ STEPS constant: `["household","caloricIntake","dietary","foodPhilosophy","storag
 - `quietready.jsx` — no import/export, first line `const { useState, useEffect, useRef } = React;`, last line `ReactDOM.createRoot...`
 - `server.js` — ESM only, never `require()`
 - Always use Python3 for server-side string replacement (sed fails on backticks)
-- Nginx must serve `index.html` for `/admin` path — `location /admin { try_files $uri /index.html; }`
-- Auth token key: customers use `qr_token`, admins use `qr_admin_token` (localStorage)
+- Nginx must serve `index.html` for `/admin` path: `location /admin { try_files $uri /index.html; }`
+- Auth token keys: customers use `qr_token`, admins use `qr_admin_token` (both in localStorage)
+- **str_replace caution:** when inserting a new function before an existing one, the replacement target must not include the existing function's opening line or it will be consumed and break the file structure
 
 ---
 
@@ -258,34 +263,36 @@ STEPS constant: `["household","caloricIntake","dietary","foodPhilosophy","storag
 ---
 
 ## Known Issues / Tech Debt
-- Stale Supabase test users — clean up in dashboard → Authentication → Users
-- server.js still references `FRESHBOOKS_*` env vars in comment block — legacy, unused
-- Phase 3 Tasks 4 & 5 still pending (extras/add-ons section, container payment choice)
+- Stale Supabase test users — clean up in dashboard Authentication Users
+- server.js still references FRESHBOOKS_* env vars in comment block — legacy, unused
+- Phase 3 Task 5 pending: container payment choice (upfront vs spread) at activation
+- Household change history not yet visible in admin customer list (Phase 4 remainder)
 
 ---
 
 ## Phase Roadmap
 
-### ✅ Phase 1 — COMPLETE (Session 7)
+### Phase 1 — COMPLETE (Session 7)
 DB schema, caloric intake wizard step, pricing matrix, portal Plan Tab accordion, Container Map Tab.
 
-### ✅ Phase 2 — COMPLETE (Session 8)
+### Phase 2 — COMPLETE (Session 8)
 Kroger CBI live, EasyCron running, CBI-derived plan costs, quantity logic fixed, login screen + endpoint.
 
-### 🔄 Phase 3 — IN PROGRESS (Sessions 9)
-1. ✅ Verified `costIndex.currentCpc` flows end-to-end (real value: 0.004394 — raw_prices was missing from price_basis select, now fixed)
-2. ✅ Added `storage_containers` join to `GET /api/portal/dashboard`
-3. ✅ Wired `getMonthStatus(m)` to real orders table
-4. 🔜 Portal: extras & add-ons section
-5. 🔜 Activation: container payment choice (upfront vs spread)
+### Phase 3 — IN PROGRESS
+1. DONE: Verified currentCpc flows end-to-end (raw_prices fix, real value 0.004394)
+2. DONE: Added storage_containers join to GET /api/portal/dashboard
+3. DONE: Wired getMonthStatus to real orders table
+4. DONE: Extras & add-ons section with equipment catalog, prices, shipment scheduling, container pricing, interactive toggles, month accordion integration
+5. PENDING: Activation container payment choice (upfront vs spread)
 
-### 🔄 Phase 4 — STARTED (Session 9)
-- ✅ Admin area live at `quietready.ai/admin`
-- ✅ Admin login endpoint (`POST /api/admin/login`) + session endpoint (`GET /api/admin/me`)
-- ✅ CBI chart (SVG line chart, stat row, daily log table)
-- ✅ Customer list tab
-- 🔜 Customer impact flags (CBI change → notify affected customers)
-- 🔜 Household change flow
+### Phase 4 — IN PROGRESS
+- DONE: Admin area at quietready.ai/admin with login wall
+- DONE: Admin login/me endpoints
+- DONE: CBI chart (SVG line chart, stat row, daily log)
+- DONE: Customer list tab
+- DONE: CBI impact flags widget (>=2% threshold, budget impact $/mo, sorted by largest change)
+- DONE: Household change flow — HouseholdChangeModal, PATCH endpoint, household_changes audit log, localFormData instant recalc
+- PENDING: Household change history visible in admin customer list
 
 ### Phase 5 — Session 11
 Resources tab (static content + personalization)
@@ -304,5 +311,5 @@ Apply for reseller accounts: Augason Farms, My Patriot Supply, Webstaurant Store
 - Session 5 (2026-03-12): Fixed auth flow end-to-end
 - Session 6 (2026-03-13): Product roadmap spec. Phase 1 complete. 10-step wizard. Portal Plan Tab + Container Map.
 - Session 7 (2026-03-13): Phase 1 deployed. DB schema, pricing matrix, caloric intake step.
-- Session 8 (2026-03-14): Phase 2 complete. Kroger API live. EasyCron running. CBI baseline set (launch_cpc=0.003821). Plan costs CBI-derived (~$504/mo 2-adult balanced). Quantity logic fixed. Login screen. Pricing model locked: $30 membership + 30% markup + pass-through shipping. Supplier strategy decided: Walmart+Amazon retail APIs + wholesale (Augason Farms, My Patriot Supply, Webstaurant). Vendor-agnostic abstraction layer planned for Phase 6.
-- Session 9 (2026-03-15): Phase 3 tasks 1-3 complete. Fixed raw_prices missing from price_basis select (currentCpc was always falling back to hardcoded 0.003821 — now reads real value 0.004394, ~15% above launch). Added storage_containers join to dashboard. Wired getMonthStatus to real orders. Added orders to formData (ascending sort). Phase 4 started: admin area live at quietready.ai/admin with login wall, CBI chart, customer list. Added POST /api/admin/login and GET /api/admin/me endpoints.
+- Session 8 (2026-03-14): Phase 2 complete. Kroger API live. EasyCron running. CBI baseline set (launch_cpc=0.003821). Plan costs CBI-derived. Login screen. Pricing model locked: $30 membership + 30% markup + pass-through shipping. Supplier strategy decided.
+- Session 9 (2026-03-15): Two back-to-back sessions totaling ~2.5 hours. Morning: Phase 3 tasks 1-3 complete — fixed raw_prices missing from price_basis select (currentCpc was always falling back to hardcoded value, now reads real 0.004394), added storage_containers to dashboard, wired getMonthStatus to real orders, added orders to formData ascending. Admin area built: login wall, CBI SVG chart, customer list, admin login/me endpoints. Afternoon: equipment prices + shipment scheduling (EQUIPMENT_CATALOG constant, containers Ship 1, equipment split Ship 1/2, prices shown in accordion and extras section). CBI impact flags widget in admin. Household change flow (HouseholdChangeModal, PATCH /api/portal/household, household_changes audit log, localFormData for instant recalc). Fixed str_replace bug that broke ActivateModal function declaration.
