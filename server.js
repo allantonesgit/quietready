@@ -808,6 +808,35 @@ app.get("/api/portal/dashboard", requireAuth, async (req, res) => {
   });
 });
 
+// PATCH /api/portal/preferences/equipment
+// Customer toggles an equipment add-on on or off post-activation
+app.patch("/api/portal/preferences/equipment", requireAuth, async (req, res) => {
+  const { key, value } = req.body;
+  if (!key || typeof value !== "boolean") {
+    return res.status(400).json({ error: "key (string) and value (boolean) required" });
+  }
+
+  const { data: prefs, error: fetchErr } = await supabase
+    .from("customer_preferences")
+    .select("equipment")
+    .eq("customer_id", req.customer.id)
+    .single();
+
+  if (fetchErr || !prefs) return res.status(404).json({ error: "Preferences not found" });
+
+  const updated = { ...(prefs.equipment || {}), [key]: value };
+
+  const { error: updateErr } = await supabase
+    .from("customer_preferences")
+    .update({ equipment: updated })
+    .eq("customer_id", req.customer.id);
+
+  if (updateErr) return res.status(500).json({ error: updateErr.message });
+
+  console.log(`🔧 Equipment update: customer ${req.customer.id} — ${key} = ${value}`);
+  res.json({ success: true, equipment: updated });
+});
+
 // GET /api/portal/inventory
 app.get("/api/portal/inventory", requireAuth, async (req, res) => {
   const { data, error } = await supabase

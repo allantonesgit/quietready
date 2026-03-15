@@ -2776,8 +2776,192 @@ function ActivateModal({ customer, authToken, onActivated, onClose }) {
   );
 }
 
+// ── ExtrasSection ─────────────────────────────────────────────────────────────
+function ExtrasSection({ formData, authToken, isPreview }) {
+  const equipment = formData?.preferences?.equipment || {};
+  const [localEquip, setLocalEquip] = useState(equipment);
+  const [saving, setSaving] = useState(null); // key being saved
+
+  // Sync if formData changes (e.g. after re-load)
+  useEffect(() => { setLocalEquip(formData?.preferences?.equipment || {}); }, [formData]);
+
+  const CATEGORIES = [
+    {
+      title: "Cooking & Kitchen",
+      icon: "🍳",
+      items: [
+        { key: "portableCooker",    label: "Portable Propane Cooker",      desc: "High-BTU outdoor burner" },
+        { key: "campCooking",       label: "Camp Cooking Set",              desc: "Pots, pans, utensils kit" },
+        { key: "manualCanOpener",   label: "Manual Can Opener",             desc: "Non-electric, heavy-duty" },
+        { key: "waterFilter",       label: "Water Filtration System",       desc: "Gravity or pump filter" },
+        { key: "waterPurification", label: "Water Purification Tablets",    desc: "Chemical backup option" },
+      ],
+    },
+    {
+      title: "First Aid & Medical",
+      icon: "🩺",
+      items: [
+        { key: "firstAidKit",  label: "Comprehensive First Aid Kit",  desc: "72-hour trauma-grade kit" },
+        { key: "medications",  label: "30-Day Medication Reserve",    desc: "Common OTC medications" },
+        { key: "dentalKit",    label: "Emergency Dental Kit",         desc: "Temporary filling, pain relief" },
+      ],
+    },
+    {
+      title: "Power & Communication",
+      icon: "📡",
+      items: [
+        { key: "handCrankRadio", label: "Hand-Crank Emergency Radio",  desc: "NOAA weather + AM/FM" },
+        { key: "solarCharger",   label: "Solar Phone Charger",         desc: "Keep devices powered" },
+        { key: "flashlights",    label: "LED Flashlights + Batteries", desc: "Multiple units recommended" },
+      ],
+    },
+    {
+      title: "Sanitation",
+      icon: "🚿",
+      items: [
+        { key: "campToilet",    label: "Portable Camp Toilet",    desc: "Self-contained with holding tank" },
+        { key: "compostToilet", label: "Composting Toilet",       desc: "Waterless, no chemicals needed" },
+        { key: "bucketToilet",  label: "Emergency Bucket Toilet", desc: "5-gallon with biodegradable bags" },
+      ],
+    },
+    {
+      title: "Warmth & Shelter",
+      icon: "🏕️",
+      items: [
+        { key: "emergencyBlankets", label: "Emergency Mylar Blankets",    desc: "Lightweight thermal retention" },
+        { key: "sleepingBags",      label: "Cold-Weather Sleeping Bags",  desc: "Rated to 0°F" },
+      ],
+    },
+  ];
+
+  const allItems = CATEGORIES.flatMap(c => c.items);
+  const selectedKeys = allItems.filter(i => localEquip[i.key]).map(i => i.key);
+
+  const toggle = async (key) => {
+    if (isPreview) return;
+    const newVal = !localEquip[key];
+    setLocalEquip(prev => ({ ...prev, [key]: newVal }));
+    setSaving(key);
+    try {
+      await fetch("/api/portal/preferences/equipment", {
+        method: "PATCH",
+        headers: { "Authorization": `Bearer ${authToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ key, value: newVal }),
+      });
+    } catch (e) {
+      // Revert on failure
+      setLocalEquip(prev => ({ ...prev, [key]: !newVal }));
+    } finally {
+      setSaving(null);
+    }
+  };
+
+  return (
+    <div style={{ marginTop: "32px" }}>
+      {/* Header */}
+      <div style={{ marginBottom: "20px" }}>
+        <div style={{ fontSize: "11px", letterSpacing: "3px", textTransform: "uppercase", color: COLORS.clay, fontFamily: "'Helvetica Neue', sans-serif", marginBottom: "4px" }}>Beyond Food</div>
+        <div style={{ fontSize: "20px", fontWeight: "700", color: COLORS.bark, letterSpacing: "-0.5px" }}>
+          Equipment & Supplies
+        </div>
+        <div style={{ fontSize: "13px", color: COLORS.stone, fontFamily: "'Helvetica Neue', sans-serif", marginTop: "4px" }}>
+          {isPreview
+            ? "Items you selected during setup. Activate to manage your add-ons."
+            : `${selectedKeys.length} item${selectedKeys.length !== 1 ? "s" : ""} selected · sourced alongside your food shipments`}
+        </div>
+      </div>
+
+      {/* Selected items summary banner (if any selected) */}
+      {selectedKeys.length > 0 && (
+        <div style={{ background: `${COLORS.moss}10`, border: `1px solid ${COLORS.moss}30`, borderRadius: "10px", padding: "14px 18px", marginBottom: "16px", display: "flex", alignItems: "center", gap: "12px" }}>
+          <span style={{ fontSize: "18px" }}>✅</span>
+          <div style={{ fontFamily: "'Helvetica Neue', sans-serif" }}>
+            <div style={{ fontSize: "13px", fontWeight: "700", color: COLORS.bark }}>
+              {selectedKeys.length} add-on{selectedKeys.length !== 1 ? "s" : ""} included in your plan
+            </div>
+            <div style={{ fontSize: "12px", color: COLORS.stone, marginTop: "2px" }}>
+              These will be sourced and shipped once vendor purchasing is live. Pricing TBD — we'll confirm before charging.
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Category grid */}
+      {CATEGORIES.map(cat => {
+        const catSelected = cat.items.filter(i => localEquip[i.key]);
+        const catUnselected = cat.items.filter(i => !localEquip[i.key]);
+        // Only show category if it has selected items, or if not preview
+        if (isPreview && catSelected.length === 0) return null;
+
+        return (
+          <div key={cat.title} style={{ background: COLORS.white, border: `1px solid ${COLORS.mist}`, borderRadius: "10px", marginBottom: "10px", overflow: "hidden" }}>
+            {/* Category header */}
+            <div style={{ padding: "12px 18px", borderBottom: `1px solid ${COLORS.mist}`, display: "flex", alignItems: "center", gap: "10px", background: COLORS.cream }}>
+              <span style={{ fontSize: "16px" }}>{cat.icon}</span>
+              <span style={{ fontSize: "12px", fontWeight: "700", letterSpacing: "0.5px", color: COLORS.bark, fontFamily: "'Helvetica Neue', sans-serif" }}>{cat.title}</span>
+              {catSelected.length > 0 && (
+                <span style={{ fontSize: "10px", background: `${COLORS.moss}20`, color: COLORS.moss, padding: "2px 8px", borderRadius: "10px", fontWeight: "700", fontFamily: "'Helvetica Neue', sans-serif" }}>
+                  {catSelected.length} selected
+                </span>
+              )}
+            </div>
+
+            {/* Items */}
+            {cat.items.map(item => {
+              const isSelected = !!localEquip[item.key];
+              const isSaving   = saving === item.key;
+              return (
+                <div
+                  key={item.key}
+                  onClick={() => toggle(item.key)}
+                  style={{
+                    display: "flex", alignItems: "center", justifyContent: "space-between",
+                    padding: "12px 18px", borderBottom: `1px solid ${COLORS.mist}`,
+                    cursor: isPreview ? "default" : "pointer",
+                    background: isSelected ? `${COLORS.moss}08` : "transparent",
+                    opacity: isPreview && !isSelected ? 0.5 : 1,
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                    <div style={{
+                      width: "18px", height: "18px", borderRadius: "4px", flexShrink: 0,
+                      border: `2px solid ${isSelected ? COLORS.moss : COLORS.mist}`,
+                      background: isSelected ? COLORS.moss : "transparent",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                    }}>
+                      {isSelected && <span style={{ color: COLORS.white, fontSize: "11px", fontWeight: "700" }}>✓</span>}
+                    </div>
+                    <div>
+                      <div style={{ fontSize: "13px", fontWeight: isSelected ? "600" : "400", color: COLORS.bark, fontFamily: "'Helvetica Neue', sans-serif" }}>{item.label}</div>
+                      <div style={{ fontSize: "11px", color: COLORS.stone, fontFamily: "'Helvetica Neue', sans-serif" }}>{item.desc}</div>
+                    </div>
+                  </div>
+                  <div style={{ fontSize: "11px", color: COLORS.stone, fontFamily: "'Helvetica Neue', sans-serif", whiteSpace: "nowrap", marginLeft: "12px" }}>
+                    {isSaving ? "Saving…" : isSelected ? <span style={{ color: COLORS.moss, fontWeight: "600" }}>Added</span> : isPreview ? "" : "+ Add"}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        );
+      })}
+
+      {/* Empty state for preview with nothing selected */}
+      {isPreview && selectedKeys.length === 0 && (
+        <div style={{ background: COLORS.white, border: `1px solid ${COLORS.mist}`, borderRadius: "10px", padding: "32px", textAlign: "center" }}>
+          <div style={{ fontSize: "24px", marginBottom: "8px" }}>🛠️</div>
+          <div style={{ fontSize: "14px", fontWeight: "600", color: COLORS.bark, marginBottom: "6px" }}>No equipment add-ons selected</div>
+          <div style={{ fontSize: "13px", color: COLORS.stone, fontFamily: "'Helvetica Neue', sans-serif" }}>
+            Activate your plan to add emergency equipment to your shipments.
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── PlanTab ──────────────────────────────────────────────────────────────────
-function PlanTab({ customer, formData, isPreview, onActivate }) {
+function PlanTab({ customer, formData, authToken, isPreview, onActivate }) {
   const [openMonth, setOpenMonth] = useState(isPreview ? null : 1);
 
   const budget        = formData?.monthlyBudget  || 150;
@@ -3091,6 +3275,9 @@ function PlanTab({ customer, formData, isPreview, onActivate }) {
           + {fulfillMonths - 2} more months in your plan — all unlock on activation
         </div>
       )}
+
+      {/* ── Extras & Add-ons ── */}
+      <ExtrasSection formData={formData} authToken={authToken} isPreview={isPreview} />
     </div>
   );
 }
@@ -3366,6 +3553,7 @@ function Portal({ customer, formData, authToken, onActivated, onLogout }) {
           <PlanTab
             customer={customer}
             formData={formData}
+            authToken={authToken}
             isPreview={isPreview}
             onActivate={() => setShowActivate(true)}
           />
