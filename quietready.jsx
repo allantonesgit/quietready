@@ -1893,7 +1893,8 @@ function StepPlan({ data, setData }) {
   const productBudget = ((budget - 30) / 1.1).toFixed(0);
   const durationLabel = { "2weeks": "2 Weeks", "1month": "1 Month", "3months": "3 Months", "6months": "6 Months", "1year": "1 Year" }[data.duration] || "3 Months";
   const containerLabel = { good: "Essential ($)", better: "Premium ($$$)", best: "Professional ($$$$$)", none: "None (skipped)" }[data.containerTier] || "Essential";
-  const months = estimateMonths(data, budget);
+  const coverageMonths = data.coverageMonths || 3;
+  const months = coverageMonths;
   const philosophy = data.foodPhilosophy || "balanced";
   const philosophyLabel = { wholeFood: "Whole Foods First 🌾", balanced: "Balanced Mix ⚖️", freezeDried: "Freeze-Dried Convenience 📦", noPreference: "Best Value 🤷" }[philosophy] || "Balanced Mix";
 
@@ -1904,119 +1905,125 @@ function StepPlan({ data, setData }) {
   const foodPlans = {
 
     wholeFood: [
-      // Grains & Starches
-      { item: "Whole wheat berries — sealed mylar (25-yr)", qty: `${totalPeople * 12} lbs`,  cat: "Grains" },
-      { item: "Organic brown & white rice",                  qty: `${totalPeople * 10} lbs`,  cat: "Grains" },
-      { item: "Rolled oats & steel-cut oats",                qty: `${totalPeople * 6} lbs`,   cat: "Grains" },
+      // Grains & Starches — ~28 lbs/person/month grains total
+      { item: "Whole wheat berries — sealed mylar (25-yr)", qty: `${totalPeople * 12 * months} lbs`,  cat: "Grains" },
+      { item: "Organic brown & white rice",                  qty: `${totalPeople * 10 * months} lbs`,  cat: "Grains" },
+      { item: "Rolled oats & steel-cut oats",                qty: `${totalPeople * 6 * months} lbs`,   cat: "Grains" },
       // Proteins
-      { item: "Canned wild-caught salmon (no salt added)",   qty: `${totalPeople * 8} cans`,  cat: "Protein" },
-      { item: "Canned sardines in olive oil",                qty: `${totalPeople * 6} cans`,  cat: "Protein" },
-      { item: "Canned chunk light tuna in water",            qty: `${totalPeople * 8} cans`,  cat: "Protein" },
-      { item: "Canned chicken breast (no additives)",        qty: `${totalPeople * 6} cans`,  cat: "Protein" },
-      { item: "Heirloom dried beans & lentils",              qty: `${totalPeople * 8} lbs`,   cat: "Protein" },
-      // Vegetables
-      { item: "Canned organic diced tomatoes",               qty: `${totalPeople * 10} cans`, cat: "Vegetables" },
-      { item: "Canned organic pumpkin purée",                qty: `${totalPeople * 4} cans`,  cat: "Vegetables" },
-      { item: "Canned organic green beans",                  qty: `${totalPeople * 6} cans`,  cat: "Vegetables" },
-      { item: "Canned organic corn (no salt added)",         qty: `${totalPeople * 4} cans`,  cat: "Vegetables" },
-      { item: "Canned organic peas",                         qty: `${totalPeople * 4} cans`,  cat: "Vegetables" },
-      { item: "Dehydrated vegetables — additive-free",       qty: `${totalPeople * 3} lbs`,   cat: "Vegetables" },
-      // Fruit
-      { item: "Canned fruit in juice (peaches, pears)",      qty: `${totalPeople * 6} cans`,  cat: "Fruit" },
-      { item: "Dried fruits — raisins, dates, apricots",     qty: `${totalPeople * 3} lbs`,   cat: "Fruit" },
+      { item: "Canned wild-caught salmon (no salt added)",   qty: `${totalPeople * 8 * months} cans`,  cat: "Protein" },
+      { item: "Canned sardines in olive oil",                qty: `${totalPeople * 6 * months} cans`,  cat: "Protein" },
+      { item: "Canned chunk light tuna in water",            qty: `${totalPeople * 8 * months} cans`,  cat: "Protein" },
+      { item: "Canned chicken breast (no additives)",        qty: `${totalPeople * 6 * months} cans`,  cat: "Protein" },
+      { item: "Heirloom dried beans & lentils",              qty: `${totalPeople * 8 * months} lbs`,   cat: "Protein" },
+      // Vegetables — ~18 cans/person/month
+      { item: "Canned organic diced tomatoes",               qty: `${totalPeople * 4 * months} cans`, cat: "Vegetables" },
+      { item: "Canned organic pumpkin purée",                qty: `${totalPeople * 4 * months} cans`,  cat: "Vegetables" },
+      { item: "Canned organic green beans",                  qty: `${totalPeople * 4 * months} cans`,  cat: "Vegetables" },
+      { item: "Canned organic corn (no salt added)",         qty: `${totalPeople * 4 * months} cans`,  cat: "Vegetables" },
+      { item: "Canned organic peas",                         qty: `${totalPeople * 4 * months} cans`,  cat: "Vegetables" },
+      { item: "Dehydrated vegetables — additive-free",       qty: `${totalPeople * 2 * months} lbs`,   cat: "Vegetables" },
+      // Fruit — ~3 cans/person/month
+      { item: "Canned fruit in juice (peaches, pears)",      qty: `${totalPeople * 3 * months} cans`,  cat: "Fruit" },
+      { item: "Dried fruits — raisins, dates, apricots",     qty: `${totalPeople * 1 * months} lbs`,   cat: "Fruit" },
       // Fats & Condiments
-      { item: "Cold-pressed olive oil",                      qty: `${totalPeople * 2} liters`,cat: "Fats" },
-      { item: "Cold-pressed coconut oil",                    qty: `${totalPeople * 1} liters`,cat: "Fats" },
-      { item: "Raw honey (indefinite shelf life)",            qty: `${totalPeople * 2} lbs`,   cat: "Sweeteners" },
-      { item: "Apple cider vinegar",                         qty: `${totalPeople * 1} bottles`,cat: "Condiments" },
+      { item: "Cold-pressed olive oil",                      qty: `${totalPeople * 1 * months} liters`,cat: "Fats" },
+      { item: "Cold-pressed coconut oil",                    qty: `${Math.ceil(totalPeople * 0.5 * months)} liters`,cat: "Fats" },
+      { item: "Raw honey (indefinite shelf life)",            qty: `${Math.ceil(totalPeople * 1.5 * months)} lbs`,   cat: "Sweeteners" },
+      { item: "Apple cider vinegar",                         qty: `${Math.ceil(totalPeople * 0.5 * months)} bottles`,cat: "Condiments" },
       // Pantry
       { item: "Sea salt, whole peppercorns, dried herbs",    qty: "Spice kit",                cat: "Pantry" },
-      { item: "Water (1 gal/person/day)",                    qty: `${totalPeople * 7} gallons`,cat: "Water" },
+      { item: "Water (1 gal/person/day)",                    qty: `${totalPeople * 14 * months} gallons`,cat: "Water" },
     ],
 
     balanced: [
-      // Grains & Starches
-      { item: "Long-grain white rice (longest shelf life)",  qty: `${totalPeople * 12} lbs`,  cat: "Grains" },
-      { item: "Rolled oats",                                 qty: `${totalPeople * 6} lbs`,   cat: "Grains" },
-      { item: "Pasta — spaghetti, penne, rotini",            qty: `${totalPeople * 8} lbs`,   cat: "Grains" },
-      { item: "Canned baked beans",                          qty: `${totalPeople * 6} cans`,  cat: "Grains" },
-      // Proteins
-      { item: "Canned chunk light tuna in water",            qty: `${totalPeople * 10} cans`, cat: "Protein" },
-      { item: "Canned wild-caught salmon",                   qty: `${totalPeople * 6} cans`,  cat: "Protein" },
-      { item: "Canned chicken breast",                       qty: `${totalPeople * 8} cans`,  cat: "Protein" },
-      { item: "Canned beef stew",                            qty: `${totalPeople * 4} cans`,  cat: "Protein" },
-      { item: "Canned corned beef hash",                     qty: `${totalPeople * 4} cans`,  cat: "Protein" },
-      { item: "Canned sardines in olive oil",                qty: `${totalPeople * 4} cans`,  cat: "Protein" },
-      { item: "Dried lentils & split peas",                  qty: `${totalPeople * 6} lbs`,   cat: "Protein" },
-      { item: "Almond & peanut butter (sealed jars)",        qty: `${totalPeople * 3} jars`,  cat: "Protein" },
-      // Vegetables
-      { item: "Canned diced tomatoes & tomato paste",        qty: `${totalPeople * 10} cans`, cat: "Vegetables" },
-      { item: "Canned mixed vegetables",                     qty: `${totalPeople * 6} cans`,  cat: "Vegetables" },
-      { item: "Canned corn",                                 qty: `${totalPeople * 4} cans`,  cat: "Vegetables" },
-      { item: "Canned green beans",                          qty: `${totalPeople * 4} cans`,  cat: "Vegetables" },
-      { item: "Canned mushrooms",                            qty: `${totalPeople * 4} cans`,  cat: "Vegetables" },
-      { item: "Canned potatoes (diced)",                     qty: `${totalPeople * 4} cans`,  cat: "Vegetables" },
-      // Soups & Ready Meals
-      { item: "Canned soups — tomato, minestrone, chili",    qty: `${totalPeople * 8} cans`,  cat: "Ready Meals" },
-      { item: "Canned chili with beans",                     qty: `${totalPeople * 4} cans`,  cat: "Ready Meals" },
-      // Fruit
-      { item: "Canned peaches, pears & mandarin oranges",    qty: `${totalPeople * 8} cans`,  cat: "Fruit" },
-      { item: "Canned pineapple chunks",                     qty: `${totalPeople * 4} cans`,  cat: "Fruit" },
-      // Fats & Dairy
-      { item: "Olive oil & vegetable oil",                   qty: `${totalPeople * 2} liters`,cat: "Fats" },
-      { item: "Evaporated milk (canned)",                    qty: `${totalPeople * 6} cans`,  cat: "Dairy" },
-      { item: "Sweetened condensed milk",                    qty: `${totalPeople * 2} cans`,  cat: "Dairy" },
+      // Grains & Starches — ~26 lbs/person/month
+      { item: "Long-grain white rice (longest shelf life)",  qty: `${totalPeople * 12 * months} lbs`,  cat: "Grains" },
+      { item: "Rolled oats",                                 qty: `${totalPeople * 4 * months} lbs`,   cat: "Grains" },
+      { item: "Pasta — spaghetti, penne, rotini",            qty: `${totalPeople * 6 * months} lbs`,   cat: "Grains" },
+      { item: "Canned baked beans",                          qty: `${totalPeople * 4 * months} cans`,  cat: "Grains" },
+      // Proteins — ~4 cans/person/month per type
+      { item: "Canned chunk light tuna in water",            qty: `${totalPeople * 4 * months} cans`, cat: "Protein" },
+      { item: "Canned wild-caught salmon",                   qty: `${totalPeople * 4 * months} cans`,  cat: "Protein" },
+      { item: "Canned chicken breast",                       qty: `${totalPeople * 4 * months} cans`,  cat: "Protein" },
+      { item: "Canned beef stew",                            qty: `${totalPeople * 2 * months} cans`,  cat: "Protein" },
+      { item: "Canned corned beef hash",                     qty: `${totalPeople * 2 * months} cans`,  cat: "Protein" },
+      { item: "Canned sardines in olive oil",                qty: `${totalPeople * 2 * months} cans`,  cat: "Protein" },
+      { item: "Dried lentils & split peas",                  qty: `${totalPeople * 4 * months} lbs`,   cat: "Protein" },
+      { item: "Almond & peanut butter (sealed jars)",        qty: `${totalPeople * 2 * months} jars`,  cat: "Protein" },
+      // Vegetables — 4 cans/person/month per type
+      { item: "Canned diced tomatoes & tomato paste",        qty: `${totalPeople * 4 * months} cans`, cat: "Vegetables" },
+      { item: "Canned mixed vegetables",                     qty: `${totalPeople * 4 * months} cans`,  cat: "Vegetables" },
+      { item: "Canned corn",                                 qty: `${totalPeople * 4 * months} cans`,  cat: "Vegetables" },
+      { item: "Canned green beans",                          qty: `${totalPeople * 4 * months} cans`,  cat: "Vegetables" },
+      { item: "Canned mushrooms",                            qty: `${totalPeople * 2 * months} cans`,  cat: "Vegetables" },
+      { item: "Canned potatoes (diced)",                     qty: `${totalPeople * 2 * months} cans`,  cat: "Vegetables" },
+      // Soups & Ready Meals — 4 cans/person/month
+      { item: "Canned soups — tomato, minestrone, chili",    qty: `${totalPeople * 4 * months} cans`,  cat: "Ready Meals" },
+      { item: "Canned chili with beans",                     qty: `${totalPeople * 4 * months} cans`,  cat: "Ready Meals" },
+      // Fruit — 3 cans/person/month
+      { item: "Canned peaches, pears & mandarin oranges",    qty: `${totalPeople * 3 * months} cans`,  cat: "Fruit" },
+      { item: "Canned pineapple chunks",                     qty: `${totalPeople * 2 * months} cans`,  cat: "Fruit" },
+      // Fats & Dairy — 3 cans dairy/person/month, 1.5 lbs sweeteners
+      { item: "Olive oil & vegetable oil",                   qty: `${totalPeople * 1 * months} liters`,cat: "Fats" },
+      { item: "Evaporated milk (canned)",                    qty: `${totalPeople * 3 * months} cans`,  cat: "Dairy" },
+      { item: "Sweetened condensed milk",                    qty: `${totalPeople * 1 * months} cans`,  cat: "Dairy" },
       // Pantry
-      { item: "Honey, sugar & brown sugar",                  qty: `${totalPeople * 3} lbs`,   cat: "Sweeteners" },
+      { item: "Honey, sugar & brown sugar",                  qty: `${Math.ceil(totalPeople * 1.5 * months)} lbs`,   cat: "Sweeteners" },
       { item: "Salt, pepper, garlic powder, spice kit",      qty: "Pantry kit",               cat: "Pantry" },
-      { item: "Water (1 gal/person/day)",                    qty: `${totalPeople * 7} gallons`,cat: "Water" },
+      { item: "Water (1 gal/person/day)",                    qty: `${totalPeople * 14 * months} gallons`,cat: "Water" },
     ],
 
     freezeDried: [
-      // Entrees
-      { item: "Freeze-dried chicken & rice entrees",         qty: `${totalPeople * 12} servings`, cat: "Entrees" },
-      { item: "Freeze-dried pasta & meat sauce",             qty: `${totalPeople * 10} servings`, cat: "Entrees" },
-      { item: "Freeze-dried beef stew",                      qty: `${totalPeople * 8} servings`,  cat: "Entrees" },
+      // Entrees — ~30 servings/person/month (3 meals/day × 10 days entrees)
+      { item: "Freeze-dried chicken & rice entrees",         qty: `${totalPeople * 10 * months} servings`, cat: "Entrees" },
+      { item: "Freeze-dried pasta & meat sauce",             qty: `${totalPeople * 10 * months} servings`, cat: "Entrees" },
+      { item: "Freeze-dried beef stew",                      qty: `${totalPeople * 10 * months} servings`,  cat: "Entrees" },
       // Proteins (canned backup)
-      { item: "Canned chicken breast",                       qty: `${totalPeople * 8} cans`,  cat: "Protein" },
-      { item: "Canned tuna & salmon",                        qty: `${totalPeople * 8} cans`,  cat: "Protein" },
-      { item: "Canned Vienna sausages & SPAM",               qty: `${totalPeople * 6} cans`,  cat: "Protein" },
-      // Vegetables
-      { item: "Freeze-dried mixed vegetables",               qty: `${totalPeople * 6} cans`,  cat: "Vegetables" },
-      { item: "Canned corn, peas & green beans",             qty: `${totalPeople * 8} cans`,  cat: "Vegetables" },
-      { item: "Canned diced tomatoes",                       qty: `${totalPeople * 6} cans`,  cat: "Vegetables" },
+      { item: "Canned chicken breast",                       qty: `${totalPeople * 4 * months} cans`,  cat: "Protein" },
+      { item: "Canned tuna & salmon",                        qty: `${totalPeople * 4 * months} cans`,  cat: "Protein" },
+      { item: "Canned Vienna sausages & SPAM",               qty: `${totalPeople * 4 * months} cans`,  cat: "Protein" },
+      // Vegetables — 4 cans/person/month
+      { item: "Freeze-dried mixed vegetables",               qty: `${totalPeople * 4 * months} cans`,  cat: "Vegetables" },
+      { item: "Canned corn, peas & green beans",             qty: `${totalPeople * 4 * months} cans`,  cat: "Vegetables" },
+      { item: "Canned diced tomatoes",                       qty: `${totalPeople * 4 * months} cans`,  cat: "Vegetables" },
       // Grains
-      { item: "Instant white rice",                          qty: `${totalPeople * 10} lbs`,  cat: "Grains" },
-      { item: "Instant mashed potatoes",                     qty: `${totalPeople * 4} lbs`,   cat: "Grains" },
-      { item: "Quick-cook oatmeal packets",                  qty: `${totalPeople * 30} pkts`,  cat: "Grains" },
-      // Soups & Comfort
-      { item: "Canned soups — chicken noodle, tomato",       qty: `${totalPeople * 10} cans`, cat: "Soups" },
-      { item: "Canned chili & stew",                         qty: `${totalPeople * 6} cans`,  cat: "Soups" },
-      // Fruit & Snacks
-      { item: "Freeze-dried fruit — strawberries, apples",   qty: `${totalPeople * 4} cans`,  cat: "Fruit" },
-      { item: "Canned fruit cocktail & peaches",             qty: `${totalPeople * 6} cans`,  cat: "Fruit" },
+      { item: "Instant white rice",                          qty: `${totalPeople * 6 * months} lbs`,  cat: "Grains" },
+      { item: "Instant mashed potatoes",                     qty: `${totalPeople * 3 * months} lbs`,   cat: "Grains" },
+      { item: "Quick-cook oatmeal packets",                  qty: `${totalPeople * 30 * months} pkts`,  cat: "Grains" },
+      // Soups & Comfort — 4 cans/person/month
+      { item: "Canned soups — chicken noodle, tomato",       qty: `${totalPeople * 4 * months} cans`, cat: "Soups" },
+      { item: "Canned chili & stew",                         qty: `${totalPeople * 4 * months} cans`,  cat: "Soups" },
+      // Fruit & Snacks — 3 cans/person/month
+      { item: "Freeze-dried fruit — strawberries, apples",   qty: `${totalPeople * 2 * months} cans`,  cat: "Fruit" },
+      { item: "Canned fruit cocktail & peaches",             qty: `${totalPeople * 3 * months} cans`,  cat: "Fruit" },
       { item: "Crackers, granola bars, hard candy",          qty: "Snack kit",                cat: "Snacks" },
       // Pantry
       { item: "Cooking oil, salt, bouillon cubes",           qty: "Rotation kit",             cat: "Pantry" },
-      { item: "Evaporated & powdered milk",                  qty: `${totalPeople * 4} cans`,  cat: "Dairy" },
-      { item: "Water (1 gal/person/day)",                    qty: `${totalPeople * 7} gallons`,cat: "Water" },
+      { item: "Evaporated & powdered milk",                  qty: `${totalPeople * 3 * months} cans`,  cat: "Dairy" },
+      { item: "Water (1 gal/person/day)",                    qty: `${totalPeople * 14 * months} gallons`,cat: "Water" },
     ],
 
     noPreference: [
-      // Best value mix of canned, dry, and freeze-dried
-      { item: "White rice",                                  qty: `${totalPeople * 15} lbs`,  cat: "Grains" },
-      { item: "Pasta & egg noodles",                         qty: `${totalPeople * 6} lbs`,   cat: "Grains" },
-      { item: "Canned tuna, chicken & salmon",               qty: `${totalPeople * 18} cans`, cat: "Protein" },
-      { item: "Canned beef stew & chili",                    qty: `${totalPeople * 8} cans`,  cat: "Protein" },
-      { item: "Canned SPAM & Vienna sausages",               qty: `${totalPeople * 6} cans`,  cat: "Protein" },
-      { item: "Dried beans & lentils",                       qty: `${totalPeople * 8} lbs`,   cat: "Protein" },
-      { item: "Peanut butter",                               qty: `${totalPeople * 3} jars`,  cat: "Protein" },
-      { item: "Canned mixed vegetables & tomatoes",          qty: `${totalPeople * 12} cans`, cat: "Vegetables" },
-      { item: "Canned soups & chowders",                     qty: `${totalPeople * 10} cans`, cat: "Soups" },
-      { item: "Canned fruit — peaches, pears, pineapple",    qty: `${totalPeople * 8} cans`,  cat: "Fruit" },
-      { item: "Evaporated milk & powdered milk",             qty: `${totalPeople * 6} cans`,  cat: "Dairy" },
+      // Best value mix — grains ~21 lbs/person/month
+      { item: "White rice",                                  qty: `${totalPeople * 15 * months} lbs`,  cat: "Grains" },
+      { item: "Pasta & egg noodles",                         qty: `${totalPeople * 6 * months} lbs`,   cat: "Grains" },
+      // Proteins — ~4 cans/person/month per type
+      { item: "Canned tuna, chicken & salmon",               qty: `${totalPeople * 4 * months} cans`, cat: "Protein" },
+      { item: "Canned beef stew & chili",                    qty: `${totalPeople * 4 * months} cans`,  cat: "Protein" },
+      { item: "Canned SPAM & Vienna sausages",               qty: `${totalPeople * 4 * months} cans`,  cat: "Protein" },
+      { item: "Dried beans & lentils",                       qty: `${totalPeople * 4 * months} lbs`,   cat: "Protein" },
+      { item: "Peanut butter",                               qty: `${totalPeople * 2 * months} jars`,  cat: "Protein" },
+      // Vegetables — 4 cans/person/month
+      { item: "Canned mixed vegetables & tomatoes",          qty: `${totalPeople * 4 * months} cans`, cat: "Vegetables" },
+      // Soups — 4 cans/person/month
+      { item: "Canned soups & chowders",                     qty: `${totalPeople * 4 * months} cans`, cat: "Soups" },
+      // Fruit — 3 cans/person/month
+      { item: "Canned fruit — peaches, pears, pineapple",    qty: `${totalPeople * 3 * months} cans`,  cat: "Fruit" },
+      // Dairy — 3 cans/person/month
+      { item: "Evaporated milk & powdered milk",             qty: `${totalPeople * 3 * months} cans`,  cat: "Dairy" },
+      // Pantry
       { item: "Cooking oil, salt, sugar, spice kit",         qty: "Pantry kit",               cat: "Pantry" },
-      { item: "Water (1 gal/person/day)",                    qty: `${totalPeople * 7} gallons`,cat: "Water" },
+      { item: "Water (1 gal/person/day)",                    qty: `${totalPeople * 14 * months} gallons`,cat: "Water" },
     ],
   };
 
@@ -3744,59 +3751,59 @@ function Portal({ customer, formData, authToken, onActivated, onLogout }) {
   // Generate the full food plan list (same logic as StepPlan)
   const foodPlans = {
     wholeFood: [
-      { item: "Whole wheat berries — sealed mylar", qty: `${totalPeople * 12} lbs`, cat: "Grains" },
-      { item: "Organic brown & white rice", qty: `${totalPeople * 10} lbs`, cat: "Grains" },
-      { item: "Rolled oats & steel-cut oats", qty: `${totalPeople * 6} lbs`, cat: "Grains" },
-      { item: "Canned wild-caught salmon", qty: `${totalPeople * 8} cans`, cat: "Protein" },
-      { item: "Canned chunk light tuna in water", qty: `${totalPeople * 8} cans`, cat: "Protein" },
-      { item: "Heirloom dried beans & lentils", qty: `${totalPeople * 8} lbs`, cat: "Protein" },
-      { item: "Canned organic diced tomatoes", qty: `${totalPeople * 10} cans`, cat: "Vegetables" },
-      { item: "Dehydrated vegetables — additive-free", qty: `${totalPeople * 3} lbs`, cat: "Vegetables" },
-      { item: "Dried fruits — raisins, dates, apricots", qty: `${totalPeople * 3} lbs`, cat: "Fruit" },
-      { item: "Cold-pressed olive oil", qty: `${totalPeople * 2} liters`, cat: "Fats" },
-      { item: "Raw honey", qty: `${totalPeople * 2} lbs`, cat: "Sweeteners" },
+      { item: "Whole wheat berries — sealed mylar", qty: `${totalPeople * 12 * months} lbs`, cat: "Grains" },
+      { item: "Organic brown & white rice", qty: `${totalPeople * 10 * months} lbs`, cat: "Grains" },
+      { item: "Rolled oats & steel-cut oats", qty: `${totalPeople * 6 * months} lbs`, cat: "Grains" },
+      { item: "Canned wild-caught salmon", qty: `${totalPeople * 8 * months} cans`, cat: "Protein" },
+      { item: "Canned chunk light tuna in water", qty: `${totalPeople * 8 * months} cans`, cat: "Protein" },
+      { item: "Heirloom dried beans & lentils", qty: `${totalPeople * 8 * months} lbs`, cat: "Protein" },
+      { item: "Canned organic diced tomatoes", qty: `${totalPeople * 4 * months} cans`, cat: "Vegetables" },
+      { item: "Dehydrated vegetables — additive-free", qty: `${totalPeople * 2 * months} lbs`, cat: "Vegetables" },
+      { item: "Dried fruits — raisins, dates, apricots", qty: `${totalPeople * 1 * months} lbs`, cat: "Fruit" },
+      { item: "Cold-pressed olive oil", qty: `${totalPeople * 1 * months} liters`, cat: "Fats" },
+      { item: "Raw honey", qty: `${Math.ceil(totalPeople * 1.5 * months)} lbs`, cat: "Sweeteners" },
       { item: "Sea salt, herbs, spice kit", qty: "Spice kit", cat: "Pantry" },
-      { item: "Water (1 gal/person/day)", qty: `${totalPeople * 14} gallons`, cat: "Water" },
+      { item: "Water (1 gal/person/day)", qty: `${totalPeople * 14 * months} gallons`, cat: "Water" },
     ],
     balanced: [
-      { item: "Long-grain white rice", qty: `${totalPeople * 12} lbs`, cat: "Grains" },
-      { item: "Rolled oats", qty: `${totalPeople * 6} lbs`, cat: "Grains" },
-      { item: "Pasta — spaghetti, penne, rotini", qty: `${totalPeople * 8} lbs`, cat: "Grains" },
-      { item: "Canned baked beans", qty: `${totalPeople * 6} cans`, cat: "Grains" },
-      { item: "Canned chunk light tuna in water", qty: `${totalPeople * 10} cans`, cat: "Protein" },
-      { item: "Canned chicken breast", qty: `${totalPeople * 8} cans`, cat: "Protein" },
-      { item: "Canned beef stew", qty: `${totalPeople * 4} cans`, cat: "Protein" },
-      { item: "Dried lentils & split peas", qty: `${totalPeople * 6} lbs`, cat: "Protein" },
-      { item: "Almond & peanut butter", qty: `${totalPeople * 3} jars`, cat: "Protein" },
-      { item: "Canned diced tomatoes & paste", qty: `${totalPeople * 10} cans`, cat: "Vegetables" },
-      { item: "Canned mixed vegetables", qty: `${totalPeople * 6} cans`, cat: "Vegetables" },
-      { item: "Canned soups — tomato, minestrone, chili", qty: `${totalPeople * 8} cans`, cat: "Ready Meals" },
-      { item: "Canned peaches, pears & mandarin oranges", qty: `${totalPeople * 8} cans`, cat: "Fruit" },
-      { item: "Evaporated milk (canned)", qty: `${totalPeople * 6} cans`, cat: "Dairy" },
-      { item: "Honey, sugar & brown sugar", qty: `${totalPeople * 3} lbs`, cat: "Sweeteners" },
+      { item: "Long-grain white rice", qty: `${totalPeople * 12 * months} lbs`, cat: "Grains" },
+      { item: "Rolled oats", qty: `${totalPeople * 4 * months} lbs`, cat: "Grains" },
+      { item: "Pasta — spaghetti, penne, rotini", qty: `${totalPeople * 6 * months} lbs`, cat: "Grains" },
+      { item: "Canned baked beans", qty: `${totalPeople * 4 * months} cans`, cat: "Grains" },
+      { item: "Canned chunk light tuna in water", qty: `${totalPeople * 4 * months} cans`, cat: "Protein" },
+      { item: "Canned chicken breast", qty: `${totalPeople * 4 * months} cans`, cat: "Protein" },
+      { item: "Canned beef stew", qty: `${totalPeople * 2 * months} cans`, cat: "Protein" },
+      { item: "Dried lentils & split peas", qty: `${totalPeople * 4 * months} lbs`, cat: "Protein" },
+      { item: "Almond & peanut butter", qty: `${totalPeople * 2 * months} jars`, cat: "Protein" },
+      { item: "Canned diced tomatoes & paste", qty: `${totalPeople * 4 * months} cans`, cat: "Vegetables" },
+      { item: "Canned mixed vegetables", qty: `${totalPeople * 4 * months} cans`, cat: "Vegetables" },
+      { item: "Canned soups — tomato, minestrone, chili", qty: `${totalPeople * 4 * months} cans`, cat: "Ready Meals" },
+      { item: "Canned peaches, pears & mandarin oranges", qty: `${totalPeople * 3 * months} cans`, cat: "Fruit" },
+      { item: "Evaporated milk (canned)", qty: `${totalPeople * 3 * months} cans`, cat: "Dairy" },
+      { item: "Honey, sugar & brown sugar", qty: `${Math.ceil(totalPeople * 1.5 * months)} lbs`, cat: "Sweeteners" },
       { item: "Salt, pepper, garlic powder, spice kit", qty: "Pantry kit", cat: "Pantry" },
-      { item: "Water (1 gal/person/day)", qty: `${totalPeople * 14} gallons`, cat: "Water" },
+      { item: "Water (1 gal/person/day)", qty: `${totalPeople * 14 * months} gallons`, cat: "Water" },
     ],
     freezeDried: [
-      { item: "Freeze-dried chicken & rice entrees", qty: `${totalPeople * 12} servings`, cat: "Entrees" },
-      { item: "Freeze-dried pasta & meat sauce", qty: `${totalPeople * 10} servings`, cat: "Entrees" },
-      { item: "Freeze-dried beef stew", qty: `${totalPeople * 8} servings`, cat: "Entrees" },
-      { item: "Canned chicken breast", qty: `${totalPeople * 8} cans`, cat: "Protein" },
-      { item: "Freeze-dried mixed vegetables", qty: `${totalPeople * 6} cans`, cat: "Vegetables" },
-      { item: "Canned diced tomatoes", qty: `${totalPeople * 6} cans`, cat: "Vegetables" },
-      { item: "Instant rice & pasta", qty: `${totalPeople * 8} pouches`, cat: "Grains" },
-      { item: "Water (1 gal/person/day)", qty: `${totalPeople * 14} gallons`, cat: "Water" },
+      { item: "Freeze-dried chicken & rice entrees", qty: `${totalPeople * 10 * months} servings`, cat: "Entrees" },
+      { item: "Freeze-dried pasta & meat sauce", qty: `${totalPeople * 10 * months} servings`, cat: "Entrees" },
+      { item: "Freeze-dried beef stew", qty: `${totalPeople * 10 * months} servings`, cat: "Entrees" },
+      { item: "Canned chicken breast", qty: `${totalPeople * 4 * months} cans`, cat: "Protein" },
+      { item: "Freeze-dried mixed vegetables", qty: `${totalPeople * 4 * months} cans`, cat: "Vegetables" },
+      { item: "Canned diced tomatoes", qty: `${totalPeople * 4 * months} cans`, cat: "Vegetables" },
+      { item: "Instant rice & pasta", qty: `${totalPeople * 6 * months} pouches`, cat: "Grains" },
+      { item: "Water (1 gal/person/day)", qty: `${totalPeople * 14 * months} gallons`, cat: "Water" },
     ],
     noPreference: [
-      { item: "Long-grain white rice", qty: `${totalPeople * 14} lbs`, cat: "Grains" },
-      { item: "Canned chunk light tuna in water", qty: `${totalPeople * 12} cans`, cat: "Protein" },
-      { item: "Canned chicken breast", qty: `${totalPeople * 10} cans`, cat: "Protein" },
-      { item: "Dried lentils & split peas", qty: `${totalPeople * 8} lbs`, cat: "Protein" },
-      { item: "Canned mixed vegetables", qty: `${totalPeople * 8} cans`, cat: "Vegetables" },
-      { item: "Canned soups (variety)", qty: `${totalPeople * 8} cans`, cat: "Ready Meals" },
-      { item: "Peanut butter", qty: `${totalPeople * 4} jars`, cat: "Protein" },
-      { item: "Honey & sugar", qty: `${totalPeople * 2} lbs`, cat: "Sweeteners" },
-      { item: "Water (1 gal/person/day)", qty: `${totalPeople * 14} gallons`, cat: "Water" },
+      { item: "Long-grain white rice", qty: `${totalPeople * 14 * months} lbs`, cat: "Grains" },
+      { item: "Canned chunk light tuna in water", qty: `${totalPeople * 4 * months} cans`, cat: "Protein" },
+      { item: "Canned chicken breast", qty: `${totalPeople * 4 * months} cans`, cat: "Protein" },
+      { item: "Dried lentils & split peas", qty: `${totalPeople * 4 * months} lbs`, cat: "Protein" },
+      { item: "Canned mixed vegetables", qty: `${totalPeople * 4 * months} cans`, cat: "Vegetables" },
+      { item: "Canned soups (variety)", qty: `${totalPeople * 4 * months} cans`, cat: "Ready Meals" },
+      { item: "Peanut butter", qty: `${totalPeople * 2 * months} jars`, cat: "Protein" },
+      { item: "Honey & sugar", qty: `${Math.ceil(totalPeople * 1.5 * months)} lbs`, cat: "Sweeteners" },
+      { item: "Water (1 gal/person/day)", qty: `${totalPeople * 14 * months} gallons`, cat: "Water" },
     ],
   };
 
