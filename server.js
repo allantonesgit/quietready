@@ -1035,7 +1035,7 @@ app.get("/api/admin/customers", requireAdmin, async (req, res) => {
 // GET /api/admin/customers/:id
 app.get("/api/admin/customers/:id", requireAdmin, async (req, res) => {
   const cid = req.params.id;
-  const [customer, prefs, household, pets, inventory, orders, containers] = await Promise.all([
+  const [customer, prefs, household, pets, inventory, orders, containers, householdChanges] = await Promise.all([
     supabase.from("customers").select("*").eq("id", cid).single(),
     supabase.from("customer_preferences").select("*").eq("customer_id", cid).single(),
     supabase.from("household").select("*").eq("customer_id", cid).single(),
@@ -1043,16 +1043,18 @@ app.get("/api/admin/customers/:id", requireAdmin, async (req, res) => {
     supabase.from("inventory_items").select("*").eq("customer_id", cid).order("category"),
     supabase.from("orders").select("*, order_items(*)").eq("customer_id", cid).order("created_at", { ascending: false }),
     supabase.from("storage_containers").select("*").eq("customer_id", cid).order("container_code"),
+    supabase.from("household_changes").select("*").eq("customer_id", cid).order("changed_at", { ascending: false }),
   ]);
 
   res.json({
-    customer:   customer.data,
-    prefs:      prefs.data,
-    household:  household.data,
-    pets:       pets.data,
-    inventory:  inventory.data,
-    orders:     orders.data,
-    containers: containers.data,
+    customer:          customer.data,
+    prefs:             prefs.data,
+    household:         household.data,
+    pets:              pets.data,
+    inventory:         inventory.data,
+    orders:            orders.data,
+    containers:        containers.data,
+    householdChanges:  householdChanges.data || [],
   });
 });
 

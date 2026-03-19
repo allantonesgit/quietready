@@ -2723,7 +2723,7 @@ function HouseholdChangeModal({ currentHousehold, currentPets, authToken, onSave
 
 
 // ── ActivateModal ─────────────────────────────────────────────────────────────
-function ActivateModal({ customer, authToken, onActivated, onClose }) {
+function ActivateModal({ customer, authToken, onActivated, onClose, containerCostTotal = 0, containerTier = "good" }) {
   const [step, setStep] = useState(1); // 1=address, 2=payment
   const [billingAddress, setBillingAddress] = useState({ line1: "", line2: "", city: "", state: "", zip: "", country: "US" });
   const [shippingAddress, setShippingAddress] = useState({ line1: "", line2: "", city: "", state: "", zip: "", country: "US" });
@@ -2902,38 +2902,27 @@ function ActivateModal({ customer, authToken, onActivated, onClose }) {
                 </div>
               )}
 
-              {/* Container payment choice */}
-              {(() => {
-                const tier = customer?.preferences?.containerTier || "good";
-                if (tier === "none") return null;
-                const volPPM = { wholeFood: 2.2, balanced: 1.9, freezeDried: 1.4, noPreference: 1.6 }[customer?.preferences?.food_philosophy || "balanced"] || 1.9;
-                const containerVol = { good: 0.57, better: 1.71, best: 2.05 }[tier] || 0.57;
-                const totalPeople = Object.values(customer?.household || {}).reduce((s, v) => s + (v || 0), 0) || 1;
-                const coverageMonths = customer?.preferences?.coverage_months || 3;
-                const count = Math.ceil((totalPeople * volPPM * coverageMonths) / containerVol);
-                const unitPrice = CONTAINER_PRICES[tier] || 8;
-                const total = count * unitPrice;
-                const perMonth = Math.ceil(total / 3);
-                const tierLabel = { good: "Essential", better: "Premium", best: "Professional" }[tier] || "Essential";
-
-                const optStyle = (active) => ({
+              {/* Container payment choice — props computed in Portal to avoid snake_case/camelCase issues */}
+              {containerTier !== "none" && containerCostTotal > 0 && (() => {
+                const tierLabel = { good: "Essential", better: "Premium", best: "Professional" }[containerTier] || "Essential";
+                const perMonth  = Math.ceil(containerCostTotal / 3);
+                const optStyle  = (active) => ({
                   flex: 1, padding: "12px 14px", borderRadius: "8px", cursor: "pointer",
                   border: `2px solid ${active ? COLORS.moss : COLORS.mist}`,
                   background: active ? `${COLORS.moss}10` : COLORS.white,
                   transition: "all 0.15s ease",
                 });
-
                 return (
                   <div style={{ marginTop: "20px", paddingTop: "18px", borderTop: `1px solid ${COLORS.mist}` }}>
                     <div style={{ fontSize: "11px", fontWeight: "700", letterSpacing: "2px", textTransform: "uppercase", color: COLORS.clay, marginBottom: "6px", fontFamily: "'Helvetica Neue', sans-serif" }}>Container kit payment</div>
                     <div style={{ fontSize: "13px", color: COLORS.stone, fontFamily: "'Helvetica Neue', sans-serif", marginBottom: "12px" }}>
-                      Your {count} {tierLabel} container{count !== 1 ? "s" : ""} arrive in Shipment 1. How would you like to pay the est. <strong style={{ color: COLORS.bark }}>${total}</strong>?
+                      Your {tierLabel} containers arrive in Shipment 1. How would you like to pay the est. <strong style={{ color: COLORS.bark }}>${containerCostTotal}</strong>?
                     </div>
                     <div style={{ display: "flex", gap: "10px" }}>
                       <div onClick={() => setContainerPaymentPref("upfront")} style={optStyle(containerPaymentPref === "upfront")}>
                         <div style={{ fontSize: "13px", fontWeight: "700", color: COLORS.bark, fontFamily: "'Helvetica Neue', sans-serif", marginBottom: "3px" }}>Pay upfront</div>
                         <div style={{ fontSize: "12px", color: COLORS.stone, fontFamily: "'Helvetica Neue', sans-serif" }}>Added to Month 1 bill</div>
-                        <div style={{ fontSize: "14px", fontWeight: "700", color: COLORS.moss, fontFamily: "'Helvetica Neue', sans-serif", marginTop: "6px" }}>${total} once</div>
+                        <div style={{ fontSize: "14px", fontWeight: "700", color: COLORS.moss, fontFamily: "'Helvetica Neue', sans-serif", marginTop: "6px" }}>${containerCostTotal} once</div>
                       </div>
                       <div onClick={() => setContainerPaymentPref("spread")} style={optStyle(containerPaymentPref === "spread")}>
                         <div style={{ fontSize: "13px", fontWeight: "700", color: COLORS.bark, fontFamily: "'Helvetica Neue', sans-serif", marginBottom: "3px" }}>Spread it out</div>
@@ -3745,6 +3734,13 @@ function Portal({ customer, formData, authToken, onActivated, onLogout }) {
   const containerTier = formData?.containerTier || customer?.preferences?.container_tier || "good";
   const firstName = customer?.full_name?.split(" ")[0] || "there";
 
+  // Container cost estimate for ActivateModal
+  const _containerVolPPM = { wholeFood: 2.2, balanced: 1.9, freezeDried: 1.4, noPreference: 1.6 }[philosophy] || 1.9;
+  const _containerVol    = { good: 0.57, better: 1.71, best: 2.05 }[containerTier] || 0.57;
+  const _containerCount  = containerTier === "none" ? 0 : Math.ceil((totalPeople * _containerVolPPM * months) / _containerVol);
+  const _containerUnit   = { good: 8, better: 22, best: 45 }[containerTier] || 8;
+  const containerCostTotal = _containerCount * _containerUnit;
+
   // Generate the full food plan list (same logic as StepPlan)
   const foodPlans = {
     wholeFood: [
@@ -3959,6 +3955,8 @@ function Portal({ customer, formData, authToken, onActivated, onLogout }) {
         <ActivateModal
           customer={customer}
           authToken={authToken}
+          containerCostTotal={containerCostTotal}
+          containerTier={containerTier}
           onActivated={(updatedCustomer) => {
             setShowActivate(false);
             onActivated(updatedCustomer);
@@ -4144,13 +4142,27 @@ function AdminScreen({ onLogout }) {
   const [loginErr,   setLoginErr]     = useState("");
   const [logging,    setLogging]      = useState(false);
 
-  const [cbiData,      setCbiData]      = useState([]);
-  const [customers,    setCustomers]    = useState([]);
-  const [loading,      setLoading]      = useState(false);
-  const [activeTab,    setActiveTab]    = useState("cbi");
+  const [cbiData,           setCbiData]           = useState([]);
+  const [customers,         setCustomers]         = useState([]);
+  const [loading,           setLoading]           = useState(false);
+  const [activeTab,         setActiveTab]         = useState("cbi");
+  const [expandedCustomer,  setExpandedCustomer]  = useState(null);  // { id, data, loading }
 
   const adminFetch = (url, opts = {}) =>
     fetch(url, { ...opts, headers: { "Authorization": `Bearer ${adminToken}`, "Content-Type": "application/json", ...(opts.headers || {}) } });
+
+  const toggleCustomerDetail = async (customerId) => {
+    // Collapse if already open
+    if (expandedCustomer?.id === customerId) { setExpandedCustomer(null); return; }
+    setExpandedCustomer({ id: customerId, data: null, loading: true });
+    try {
+      const res  = await adminFetch(`/api/admin/customers/${customerId}`);
+      const data = await res.json();
+      setExpandedCustomer({ id: customerId, data, loading: false });
+    } catch {
+      setExpandedCustomer({ id: customerId, data: null, loading: false, error: "Failed to load" });
+    }
+  };
 
   // Load dashboard data when token available
   useEffect(() => {
@@ -4507,34 +4519,122 @@ function AdminScreen({ onLogout }) {
             <div style={{ marginBottom: "24px" }}>
               <div style={{ fontSize: "11px", letterSpacing: "3px", textTransform: "uppercase", color: COLORS.clay, marginBottom: "6px" }}>Directory</div>
               <div style={{ fontSize: "26px", fontWeight: "700", color: COLORS.bark, fontFamily: "Georgia, serif", letterSpacing: "-0.8px" }}>Customers</div>
-              <div style={{ fontSize: "13px", color: COLORS.stone, marginTop: "4px" }}>{customers.length} total</div>
+              <div style={{ fontSize: "13px", color: COLORS.stone, marginTop: "4px" }}>{customers.length} total · click a row to view household history</div>
             </div>
             <div style={{ background: COLORS.white, border: `1px solid ${COLORS.mist}`, borderRadius: "12px", overflow: "hidden" }}>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
                 <thead>
                   <tr style={{ background: COLORS.cream }}>
-                    {["Name", "Email", "Status", "Activated", "Budget"].map(h => (
-                      <th key={h} style={{ padding: "12px 16px", textAlign: "left", color: COLORS.stone, fontSize: "11px", fontWeight: "600", letterSpacing: "1px", textTransform: "uppercase", borderBottom: `1px solid ${COLORS.mist}` }}>{h}</th>
+                    {["", "Name", "Email", "Status", "Activated", "Budget"].map(h => (
+                      <th key={h} style={{ padding: "12px 16px", textAlign: "left", color: COLORS.stone, fontSize: "11px", fontWeight: "600", letterSpacing: "1px", textTransform: "uppercase", borderBottom: `1px solid ${COLORS.mist}`, width: h === "" ? "28px" : "auto" }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {customers.map((c, i) => {
-                    const statusColor = { active: COLORS.moss, preview: COLORS.clay, paused: COLORS.stone, cancelled: "#C45A4A" }[c.status] || COLORS.stone;
+                    const statusColor  = { active: COLORS.moss, preview: COLORS.clay, paused: COLORS.stone, cancelled: "#C45A4A" }[c.status] || COLORS.stone;
+                    const isExpanded   = expandedCustomer?.id === c.id;
+                    const detailData   = isExpanded ? expandedCustomer.data : null;
+                    const detailLoading = isExpanded && expandedCustomer.loading;
+                    const changes      = detailData?.householdChanges || [];
+
                     return (
-                      <tr key={i} style={{ borderBottom: `1px solid ${COLORS.mist}` }}>
-                        <td style={{ padding: "12px 16px", color: COLORS.bark, fontWeight: "600" }}>{c.full_name || "—"}</td>
-                        <td style={{ padding: "12px 16px", color: COLORS.stone, fontFamily: "monospace", fontSize: "12px" }}>{c.email}</td>
-                        <td style={{ padding: "12px 16px" }}>
-                          <span style={{ background: `${statusColor}18`, color: statusColor, padding: "3px 10px", borderRadius: "20px", fontSize: "11px", fontWeight: "600", letterSpacing: "0.5px" }}>{c.status}</span>
-                        </td>
-                        <td style={{ padding: "12px 16px", color: COLORS.stone, fontSize: "12px" }}>{c.activated_at ? new Date(c.activated_at).toLocaleDateString() : "—"}</td>
-                        <td style={{ padding: "12px 16px", color: COLORS.bark }}>{c.customer_preferences?.monthly_budget ? `$${c.customer_preferences.monthly_budget}/mo` : "—"}</td>
-                      </tr>
+                      <React.Fragment key={i}>
+                        {/* Main row */}
+                        <tr
+                          onClick={() => toggleCustomerDetail(c.id)}
+                          style={{ borderBottom: isExpanded ? "none" : `1px solid ${COLORS.mist}`, cursor: "pointer", background: isExpanded ? `${COLORS.moss}08` : "transparent", transition: "background 0.15s" }}
+                          onMouseEnter={e => { if (!isExpanded) e.currentTarget.style.background = COLORS.cream; }}
+                          onMouseLeave={e => { if (!isExpanded) e.currentTarget.style.background = "transparent"; }}
+                        >
+                          <td style={{ padding: "12px 16px", color: COLORS.stone, fontSize: "11px", userSelect: "none" }}>{isExpanded ? "▼" : "▶"}</td>
+                          <td style={{ padding: "12px 16px", color: COLORS.bark, fontWeight: "600" }}>{c.full_name || "—"}</td>
+                          <td style={{ padding: "12px 16px", color: COLORS.stone, fontFamily: "monospace", fontSize: "12px" }}>{c.email}</td>
+                          <td style={{ padding: "12px 16px" }}>
+                            <span style={{ background: `${statusColor}18`, color: statusColor, padding: "3px 10px", borderRadius: "20px", fontSize: "11px", fontWeight: "600", letterSpacing: "0.5px" }}>{c.status}</span>
+                          </td>
+                          <td style={{ padding: "12px 16px", color: COLORS.stone, fontSize: "12px" }}>{c.activated_at ? new Date(c.activated_at).toLocaleDateString() : "—"}</td>
+                          <td style={{ padding: "12px 16px", color: COLORS.bark }}>{c.customer_preferences?.monthly_budget ? `$${c.customer_preferences.monthly_budget}/mo` : "—"}</td>
+                        </tr>
+
+                        {/* Expanded detail row */}
+                        {isExpanded && (
+                          <tr style={{ borderBottom: `1px solid ${COLORS.mist}` }}>
+                            <td colSpan="6" style={{ padding: "0 0 0 48px", background: `${COLORS.moss}08` }}>
+                              <div style={{ padding: "16px 24px 20px 0" }}>
+                                {detailLoading && (
+                                  <div style={{ color: COLORS.stone, fontSize: "13px", fontFamily: "'Helvetica Neue', sans-serif", padding: "8px 0" }}>Loading history…</div>
+                                )}
+                                {!detailLoading && changes.length === 0 && (
+                                  <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                                    <div style={{ width: "28px", height: "28px", borderRadius: "50%", background: `${COLORS.moss}20`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "14px", flexShrink: 0 }}>✓</div>
+                                    <div style={{ fontSize: "13px", color: COLORS.stone, fontFamily: "'Helvetica Neue', sans-serif" }}>No household changes on record.</div>
+                                  </div>
+                                )}
+                                {!detailLoading && changes.length > 0 && (
+                                  <div>
+                                    <div style={{ fontSize: "11px", fontWeight: "700", letterSpacing: "2px", textTransform: "uppercase", color: COLORS.clay, marginBottom: "12px", fontFamily: "'Helvetica Neue', sans-serif" }}>
+                                      Household change history · {changes.length} event{changes.length !== 1 ? "s" : ""}
+                                    </div>
+                                    <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                                      {changes.map((ch, ci) => {
+                                        const diff = ch.changes_json || {};
+                                        const people = diff.people || {};
+                                        const pets   = diff.pets   || {};
+                                        const peopleKeys = Object.keys(people);
+                                        const petKeys    = Object.keys(pets);
+                                        return (
+                                          <div key={ci} style={{ background: COLORS.white, border: `1px solid ${COLORS.mist}`, borderRadius: "8px", padding: "12px 16px", display: "flex", gap: "16px", alignItems: "flex-start" }}>
+                                            {/* Date column */}
+                                            <div style={{ flexShrink: 0, minWidth: "90px" }}>
+                                              <div style={{ fontSize: "12px", fontWeight: "700", color: COLORS.bark, fontFamily: "'Helvetica Neue', sans-serif" }}>
+                                                {new Date(ch.changed_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                                              </div>
+                                              <div style={{ fontSize: "11px", color: COLORS.stone, fontFamily: "'Helvetica Neue', sans-serif", marginTop: "2px" }}>
+                                                {new Date(ch.changed_at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
+                                              </div>
+                                            </div>
+                                            {/* Changes column */}
+                                            <div style={{ flex: 1, minWidth: 0 }}>
+                                              <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: ch.reason ? "8px" : "0" }}>
+                                                {peopleKeys.map(k => {
+                                                  const { from, to } = people[k];
+                                                  return (
+                                                    <span key={k} style={{ background: COLORS.cream, border: `1px solid ${COLORS.mist}`, borderRadius: "4px", padding: "3px 8px", fontSize: "12px", fontFamily: "'Helvetica Neue', sans-serif", color: COLORS.bark }}>
+                                                      {k}: <span style={{ color: COLORS.stone, textDecoration: "line-through", marginRight: "3px" }}>{from}</span>
+                                                      <span style={{ color: COLORS.moss, fontWeight: "700" }}>→ {to}</span>
+                                                    </span>
+                                                  );
+                                                })}
+                                                {petKeys.map(k => {
+                                                  const { from, to } = pets[k];
+                                                  return (
+                                                    <span key={`pet-${k}`} style={{ background: COLORS.cream, border: `1px solid ${COLORS.mist}`, borderRadius: "4px", padding: "3px 8px", fontSize: "12px", fontFamily: "'Helvetica Neue', sans-serif", color: COLORS.bark }}>
+                                                      🐾 {k}: <span style={{ color: COLORS.stone, textDecoration: "line-through", marginRight: "3px" }}>{from}</span>
+                                                      <span style={{ color: COLORS.moss, fontWeight: "700" }}>→ {to}</span>
+                                                    </span>
+                                                  );
+                                                })}
+                                              </div>
+                                              {ch.reason && (
+                                                <div style={{ fontSize: "12px", color: COLORS.stone, fontStyle: "italic", fontFamily: "'Helvetica Neue', sans-serif" }}>"{ch.reason}"</div>
+                                              )}
+                                            </div>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
                     );
                   })}
                   {customers.length === 0 && (
-                    <tr><td colSpan="5" style={{ padding: "40px", textAlign: "center", color: COLORS.stone }}>No customers yet.</td></tr>
+                    <tr><td colSpan="6" style={{ padding: "40px", textAlign: "center", color: COLORS.stone }}>No customers yet.</td></tr>
                   )}
                 </tbody>
               </table>
