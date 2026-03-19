@@ -2731,6 +2731,7 @@ function ActivateModal({ customer, authToken, onActivated, onClose }) {
   const [setupClientSecret, setSetupClientSecret] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [containerPaymentPref, setContainerPaymentPref] = useState("upfront"); // "upfront" | "spread"
 
   const mountRef = useRef(null);
   const stripeRef = useRef(null);
@@ -2801,6 +2802,7 @@ function ActivateModal({ customer, authToken, onActivated, onClose }) {
           paymentMethodId: setupIntent.payment_method,
           billingAddress: effectiveBilling,
           shippingAddress: effectiveShipping,
+          containerPaymentPreference: containerPaymentPref,
         }),
       });
       const data = await res.json();
@@ -2899,6 +2901,49 @@ function ActivateModal({ customer, authToken, onActivated, onClose }) {
                   <AddrBlock title="Billing address" addr={billingAddress} setAddr={setBillingAddress} />
                 </div>
               )}
+
+              {/* Container payment choice */}
+              {(() => {
+                const tier = customer?.preferences?.containerTier || "good";
+                if (tier === "none") return null;
+                const volPPM = { wholeFood: 2.2, balanced: 1.9, freezeDried: 1.4, noPreference: 1.6 }[customer?.preferences?.food_philosophy || "balanced"] || 1.9;
+                const containerVol = { good: 0.57, better: 1.71, best: 2.05 }[tier] || 0.57;
+                const totalPeople = Object.values(customer?.household || {}).reduce((s, v) => s + (v || 0), 0) || 1;
+                const coverageMonths = customer?.preferences?.coverage_months || 3;
+                const count = Math.ceil((totalPeople * volPPM * coverageMonths) / containerVol);
+                const unitPrice = CONTAINER_PRICES[tier] || 8;
+                const total = count * unitPrice;
+                const perMonth = Math.ceil(total / 3);
+                const tierLabel = { good: "Essential", better: "Premium", best: "Professional" }[tier] || "Essential";
+
+                const optStyle = (active) => ({
+                  flex: 1, padding: "12px 14px", borderRadius: "8px", cursor: "pointer",
+                  border: `2px solid ${active ? COLORS.moss : COLORS.mist}`,
+                  background: active ? `${COLORS.moss}10` : COLORS.white,
+                  transition: "all 0.15s ease",
+                });
+
+                return (
+                  <div style={{ marginTop: "20px", paddingTop: "18px", borderTop: `1px solid ${COLORS.mist}` }}>
+                    <div style={{ fontSize: "11px", fontWeight: "700", letterSpacing: "2px", textTransform: "uppercase", color: COLORS.clay, marginBottom: "6px", fontFamily: "'Helvetica Neue', sans-serif" }}>Container kit payment</div>
+                    <div style={{ fontSize: "13px", color: COLORS.stone, fontFamily: "'Helvetica Neue', sans-serif", marginBottom: "12px" }}>
+                      Your {count} {tierLabel} container{count !== 1 ? "s" : ""} arrive in Shipment 1. How would you like to pay the est. <strong style={{ color: COLORS.bark }}>${total}</strong>?
+                    </div>
+                    <div style={{ display: "flex", gap: "10px" }}>
+                      <div onClick={() => setContainerPaymentPref("upfront")} style={optStyle(containerPaymentPref === "upfront")}>
+                        <div style={{ fontSize: "13px", fontWeight: "700", color: COLORS.bark, fontFamily: "'Helvetica Neue', sans-serif", marginBottom: "3px" }}>Pay upfront</div>
+                        <div style={{ fontSize: "12px", color: COLORS.stone, fontFamily: "'Helvetica Neue', sans-serif" }}>Added to Month 1 bill</div>
+                        <div style={{ fontSize: "14px", fontWeight: "700", color: COLORS.moss, fontFamily: "'Helvetica Neue', sans-serif", marginTop: "6px" }}>${total} once</div>
+                      </div>
+                      <div onClick={() => setContainerPaymentPref("spread")} style={optStyle(containerPaymentPref === "spread")}>
+                        <div style={{ fontSize: "13px", fontWeight: "700", color: COLORS.bark, fontFamily: "'Helvetica Neue', sans-serif", marginBottom: "3px" }}>Spread it out</div>
+                        <div style={{ fontSize: "12px", color: COLORS.stone, fontFamily: "'Helvetica Neue', sans-serif" }}>Over first 3 shipments</div>
+                        <div style={{ fontSize: "14px", fontWeight: "700", color: COLORS.moss, fontFamily: "'Helvetica Neue', sans-serif", marginTop: "6px" }}>${perMonth}/mo × 3</div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           )}
 

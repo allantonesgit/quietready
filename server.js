@@ -646,7 +646,7 @@ app.post("/api/onboarding/create-setup-intent", async (req, res) => {
 // billing template, upgrades status to "active".
 // ============================================================
 app.post("/api/onboarding/activate", requireAuth, async (req, res) => {
-  const { paymentMethodId, billingAddress, shippingAddress } = req.body;
+  const { paymentMethodId, billingAddress, shippingAddress, containerPaymentPreference } = req.body;
   const customer = req.customer;
 
   if (!paymentMethodId) return res.status(400).json({ error: "paymentMethodId is required" });
@@ -740,6 +740,7 @@ app.post("/api/onboarding/activate", requireAuth, async (req, res) => {
         activated_at:              new Date().toISOString(),
         personal_cbi:              cbiAtActivation,
         cbi_locked_at:             new Date().toISOString(),
+        container_payment_preference: containerPaymentPreference || "upfront",
       })
       .eq("id", customer.id)
       .select()
