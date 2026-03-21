@@ -1,0 +1,27 @@
+{
+  "name": "quietready-api",
+  "version": "1.0.0",
+  "description": "QuietReady.ai backend API",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start":   "node server.js",
+    "dev":     "node --watch server.js",
+    "pm2":     "pm2 start server.js --name quietready-api --env production"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.43.0",
+    "cors":                  "^2.8.5",
+    "express":               "^4.19.2",
+    "express-rate-limit":    "^7.3.1",
+    "helmet":                "^7.1.0",
+    "morgan":                "^1.10.0",
+    "stripe":                "^16.0.0"
+  },
+  "devDependencies": {
+    "pm2": "^5.4.2"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
