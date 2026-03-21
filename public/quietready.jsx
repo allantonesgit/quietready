@@ -1217,44 +1217,52 @@ function StepCoverageBudget({ data, setData }) {
     </div>
   );
 
-  // ── Live storage fit check (mirrors StepContainers logic) ──
+  // ── Live storage fit check — uses new two-container system (NO cans) ──
   const L = parseFloat(data.storageL) || 0;
   const W = parseFloat(data.storageW) || 0;
   const stackH = parseFloat(data.maxStack) || parseFloat(data.storageH) || 4;
   const hasSpaceData = L > 0 && W > 0;
 
-  const volPerPersonPerMonth = { wholeFood: 2.2, balanced: 1.9, freezeDried: 1.4, noPreference: 1.6 }[data.foodPhilosophy] || 1.9;
-  const volPerPetPerMonth = (() => {
+  // Bucket vol per person per month (bulk dry goods in Mylar — NO cans)
+  const bucketVolPPM_cb = {
+    wholeFood: 1.40, balanced: 0.80, freezeDried: 0.20, noPreference: 0.70,
+  }[data.foodPhilosophy] || 0.80;
+  // Bin vol per person per month (packaged items — NO cans)
+  const binVolPPM_cb = {
+    wholeFood: 0.40, balanced: 0.70, freezeDried: 1.10, noPreference: 0.40,
+  }[data.foodPhilosophy] || 0.70;
+
+  const petBinVol_cb = (() => {
     let v = 0;
     if (pets.dogs?.count > 0) v += pets.dogs.count * ({ Small: 0.18, Medium: 0.38, Large: 0.70 }[pets.dogs.size] || 0.38);
     if (pets.cats?.count > 0) v += pets.cats.count * 0.22;
     return v;
   })();
-  const totalFoodVolume = (totalPeople * volPerPersonPerMonth + volPerPetPerMonth) * coverageMonths;
 
-  // Default to Essential tier if not yet chosen
-  const tierKey = data.containerTier && data.containerTier !== "none" ? data.containerTier : "good";
-  const containerVol      = { good: 0.57, better: 1.71, best: 2.05 }[tierKey];
-  const containerFootprint = { good: 1.00, better: 1.71, best: 2.08 }[tierKey];
-  const containerHeightFt  = { good: 1.21, better: 1.375, best: 1.54 }[tierKey];
-  const tierLabel          = { good: "5-gal buckets", better: "IRIS 60qt", best: "LTS professional" }[tierKey];
+  const bucketsNeeded_cb = Math.ceil((totalPeople * bucketVolPPM_cb * coverageMonths) / CONTAINER_SYSTEM.bucket.volumeCuFt);
+  const binsNeeded_cb    = Math.ceil(((totalPeople * binVolPPM_cb + petBinVol_cb) * coverageMonths) / CONTAINER_SYSTEM.bin.volumeCuFt);
 
-  const estContainers      = Math.ceil(totalFoodVolume / containerVol);
-  const containersPerStack = Math.max(1, Math.floor(stackH / containerHeightFt));
-  const stacksNeeded       = Math.ceil(estContainers / containersPerStack);
-  const sqFtNeeded         = parseFloat((stacksNeeded * containerFootprint).toFixed(1));
+  const bucketStackH_cb  = Math.max(1, Math.floor(stackH / CONTAINER_SYSTEM.bucket.heightFt));
+  const binStackH_cb     = Math.max(1, Math.floor(stackH / CONTAINER_SYSTEM.bin.heightFt));
+  const sqFtNeeded_cb    = parseFloat((
+    Math.ceil(bucketsNeeded_cb / bucketStackH_cb) * CONTAINER_SYSTEM.bucket.footprintSqFt +
+    Math.ceil(binsNeeded_cb    / binStackH_cb)    * CONTAINER_SYSTEM.bin.footprintSqFt
+  ).toFixed(1));
   const sqFtAvailable      = L * W;
-  const storageExceeded    = hasSpaceData && sqFtNeeded > sqFtAvailable;
-  const sqFtShort          = hasSpaceData ? Math.max(0, sqFtNeeded - sqFtAvailable).toFixed(1) : 0;
+  const storageExceeded    = hasSpaceData && sqFtNeeded_cb > sqFtAvailable;
+  const sqFtShort          = hasSpaceData ? Math.max(0, sqFtNeeded_cb - sqFtAvailable).toFixed(1) : 0;
+  const estContainers      = bucketsNeeded_cb + binsNeeded_cb;
 
-  // Find max coverage months that fits in the space
+  // Find max coverage months that fits in the space (new container system)
   const maxFittingMonths = (() => {
     if (!hasSpaceData) return null;
     for (let m = 12; m >= 0.5; m -= 0.5) {
-      const vol = (totalPeople * volPerPersonPerMonth + volPerPetPerMonth) * m;
-      const ctrs = Math.ceil(vol / containerVol);
-      const stacks = Math.ceil(ctrs / containersPerStack);
-      if (stacks * containerFootprint <= sqFtAvailable) return m;
+      const bkts  = Math.ceil((totalPeople * bucketVolPPM_cb * m) / CONTAINER_SYSTEM.bucket.volumeCuFt);
+      const bns   = Math.ceil(((totalPeople * binVolPPM_cb + petBinVol_cb) * m) / CONTAINER_SYSTEM.bin.volumeCuFt);
+      const sqft  =
+        Math.ceil(bkts / Math.max(1, Math.floor(stackH / CONTAINER_SYSTEM.bucket.heightFt))) * CONTAINER_SYSTEM.bucket.footprintSqFt +
+        Math.ceil(bns  / Math.max(1, Math.floor(stackH / CONTAINER_SYSTEM.bin.heightFt)))    * CONTAINER_SYSTEM.bin.footprintSqFt;
+      if (sqft <= sqFtAvailable) return m;
     }
     return 0.5;
   })();
@@ -1349,8 +1357,8 @@ function StepCoverageBudget({ data, setData }) {
             ⚠️ {coverageLabel(coverageMonths)} of food won't fit in your {L}′ × {W}′ space
           </div>
           <div style={{ color: COLORS.stone, marginBottom: "10px" }}>
-            {estContainers} {tierLabel} need ~{sqFtNeeded} sq ft of floor space
-            ({stacksNeeded} stacks, {containersPerStack} high). Your space has {sqFtAvailable} sq ft — {sqFtShort} sq ft short.
+            {estContainers} containers ({bucketsNeeded_cb} buckets + {binsNeeded_cb} bins) need ~{sqFtNeeded_cb} sq ft of floor space.
+            Your space has {sqFtAvailable} sq ft — {sqFtShort} sq ft short.
           </div>
           <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
             {maxFittingMonths !== null && maxFittingMonths < coverageMonths && (
@@ -1580,285 +1588,208 @@ function StepEquipment({ data, setData }) {
 }
 
 function StepContainers({ data, setData }) {
-  const [hoveredBrand, setHoveredBrand] = useState(null);
-
-  const brandInfo = {
-    "Gamma Seal / HDX": {
-      title: "Gamma Seal & HDX",
-      body: "Gamma Seal lids are the gold standard for food-grade bucket storage — a two-piece system with a threaded spin-off lid that creates an airtight seal. HDX (Home Depot's brand) 5-gallon buckets are BPA-free, food-safe, and the most widely available option. Together they form a simple, proven system used by serious preppers for decades. Easy to find locally if you ever need replacements.",
-      pros: ["Widely available at Home Depot & online", "Replacement lids easy to source locally", "Ideal for bulk grains, beans & rice with oxygen absorbers", "5-gallon size is easiest to move when full"],
-      cons: ["Less uniform stacking than modular systems", "Buckets vary slightly in diameter by batch"],
-    },
-    "IRIS USA / Sterilite": {
-      title: "IRIS USA & Sterilite",
-      body: "IRIS USA produces some of the most popular modular airtight storage systems on the market — engineered specifically for uniform stacking with positive-latch lids and silicone gasket seals. Sterilite's WeatherTight line offers similar quality at a slightly lower price point. Both brands are designed to stack predictably, making them ideal for maximizing vertical space in a dedicated storage room or basement.",
-      pros: ["Perfectly uniform — every box same size", "Latching lids with silicone gaskets", "UV-resistant versions for garage/shed storage", "Cleaner look than buckets for living space storage"],
-      cons: ["Not ideal for bulk dry goods without inner mylar bags", "Lids can weaken over many open/close cycles"],
-    },
-    "Safecastle / LTS": {
-      title: "Safecastle & LTS (Long Term Storage)",
-      body: "Safecastle is a professional-grade emergency preparedness retailer supplying military, FEMA, and serious long-term preppers. Their container systems and those from Long Term Storage (LTS) are engineered for 20–25 year storage with integrated oxygen absorbers, heavy-gauge construction, and compatibility with professional racking systems. These are the containers used in serious bunker-style setups and are overkill for most households — but unmatched if you're planning for truly long-term resilience.",
-      pros: ["25-year rated shelf life systems", "Oxygen absorbers integrated or included", "Compatible with professional metal racking", "Custom label holders built into lids", "Preferred by emergency management professionals"],
-      cons: ["Significantly higher cost", "Harder to source locally — primarily online", "Heavier and less portable when full"],
-    },
-  };
-
-  const tiers = [
-    {
-      key: "good",
-      name: "Essential",
-      stars: "★★★☆☆",
-      price: "$",
-      estCost: "Est. $180–$320",
-      brand: "Gamma Seal / HDX",
-      features: [
-        "Food-grade HDPE buckets with Gamma Seal lids",
-        "5-gallon stackable design",
-        "Airtight oxygen barrier",
-        "BPA-free construction",
-        "Fits standard shelving",
-      ],
-    },
-    {
-      key: "better",
-      name: "Premium",
-      stars: "★★★★☆",
-      price: "$$$",
-      estCost: "Est. $420–$680",
-      brand: "IRIS USA / Sterilite",
-      features: [
-        "Modular airtight stack system",
-        "Uniform sizing for maximum space efficiency",
-        "Latching lids with silicone seals",
-        "UV-resistant for garage/basement storage",
-        "Stackable up to 6 high safely",
-      ],
-    },
-    {
-      key: "best",
-      name: "Professional",
-      stars: "★★★★★",
-      price: "$$$$$",
-      estCost: "Est. $900–$1,400",
-      brand: "Safecastle / LTS",
-      features: [
-        "Military-spec airtight containers",
-        "Integrated oxygen absorbers included",
-        "25-year storage rating",
-        "Custom label holders built in",
-        "Modular racking system compatible",
-      ],
-    },
-  ];
+  // ── What goes in buckets vs bins ───────────────────────────────────────────
+  // Buckets (Gamma Seal 5-gal): BULK DRY GOODS stored in Mylar bags with O2 absorbers
+  //   grains, legumes, oats, flour, sugar, powdered milk, dried fruit, spices in bulk
+  //   These fill to ~0.57 cu ft usable per bucket
+  //
+  // Bins (IRIS 82qt WeatherPro): EVERYTHING ELSE — packaged items, freeze-dried pouches,
+  //   nut butters, oils (sealed), pantry kits, equipment items, mylar-pouched items
+  //   These hold ~2.33 cu ft usable per bin
+  //
+  // CANNED GOODS: excluded from container calc — go on open shelving
+  //   We suggest wire or wood shelving from the hardware store
 
   const totalPeople = Object.values(data.household || {}).reduce((s, v) => s + v, 0) || 1;
-  const totalPets = Object.values(data.pets || {}).reduce((s, v) => s + (v?.count || 0), 0);
-  const durationMonths = { "2weeks": 0.5, "1month": 1, "3months": 3, "6months": 6, "1year": 12 }[data.duration] || (data.coverageMonths || 3);
+  const pets        = data.pets || {};
+  const totalPets   = Object.values(pets).reduce((s, v) => s + (v?.count || 0), 0);
+  const months      = data.coverageMonths || 3;
+  const philosophy  = data.foodPhilosophy || "balanced";
 
-  // ── Container volume estimation ──
-  // Worked out from actual food list quantities per person per month:
-  //
-  // Balanced: ~18 protein cans + ~20 veg/soup/fruit cans + ~18 lbs dry goods + oils/condiments
-  //   Cans (standard 15oz): ~0.016 cu ft each → 38 cans = 0.61 cu ft
-  //   Dry goods (~18 lbs loosely packed): ~0.04 cu ft/lb → 0.72 cu ft
-  //   Oils, nut butter, condiments: ~0.20 cu ft
-  //   Packing inefficiency (air gaps, odd shapes): +25%
-  //   → ~1.9 cu ft per person per month
-  //
-  // Whole Foods: heavier on bulk dry goods (wheat berries, rice, oats, beans fill more space)
-  //   → ~2.2 cu ft per person per month
-  //
-  // Freeze-Dried: #10 cans are large (0.11 cu ft each), entree pouches pack efficiently
-  //   → ~1.4 cu ft per person per month
-  //
-  // Best Value: mostly canned goods + rice/pasta/beans, less variety = denser packing
-  //   → ~1.6 cu ft per person per month
-  //
-  // Pet food: 30 lb bag kibble (large dog) ≈ 0.7 cu ft; medium ~0.35; small ~0.18
-  // Using per-pet average of 0.45 cu ft/month (mix of dog sizes + cats)
+  // ── Volume split by philosophy (EXCLUDING canned goods) ──────────────────
+  // Bucket volume = bulk dry goods (grains, legumes, etc.) in Mylar
+  // Bin volume = packaged items, freeze-dried, oils, pantry kits, etc.
+  // All canned goods volumes are REMOVED from these calculations
+  const bucketVolPPM = {
+    wholeFood:    1.40,  // heavy on whole grains/legumes — mostly buckets
+    balanced:     0.80,  // mix of grains + packaged items
+    freezeDried:  0.20,  // minimal bulk dry goods
+    noPreference: 0.70,  // cost-optimized = lots of rice/beans
+  }[philosophy] || 0.80;
 
-  const volPerPersonPerMonth = {
-    wholeFood:    2.2,
-    balanced:     1.9,
-    freezeDried:  1.4,
-    noPreference: 1.6,
-  }[data.foodPhilosophy] || 1.9;
+  const binVolPPM = {
+    wholeFood:    0.40,  // some packaged items, oils, dried fruit
+    balanced:     0.70,  // packaged items, nut butter, pantry kits
+    freezeDried:  1.10,  // freeze-dried pouches/cans dominate
+    noPreference: 0.40,  // minimal packaged items
+  }[philosophy] || 0.70;
 
-  const volPerPetPerMonth = (() => {
-    const pets = data.pets || {};
-    let vol = 0;
+  // Pet food goes in bins
+  const petBinVolPM = (() => {
+    let v = 0;
     if (pets.dogs?.count > 0) {
       const dogVol = { Small: 0.18, Medium: 0.38, Large: 0.70 }[pets.dogs.size] || 0.38;
-      vol += pets.dogs.count * dogVol;
+      v += pets.dogs.count * dogVol;
     }
-    if (pets.cats?.count > 0) vol += pets.cats.count * 0.22;
-    const otherCount = (pets.birds?.count || 0) + (pets.smallAnimals?.count || 0);
-    vol += otherCount * 0.10;
-    return vol; // total per month across all pets
+    if (pets.cats?.count > 0) v += pets.cats.count * 0.22;
+    return v;
   })();
 
-  const totalFoodVolume = (totalPeople * volPerPersonPerMonth + volPerPetPerMonth) * durationMonths;
+  const totalBucketVol = totalPeople * bucketVolPPM * months;
+  const totalBinVol    = (totalPeople * binVolPPM + petBinVolPM) * months;
 
-  // Container usable volumes (accounting for ~85% fill efficiency):
-  // Essential: 5-gal HDPE bucket → 5 gal = 0.668 cu ft × 0.85 = ~0.57 cu ft usable
-  // Premium: IRIS 60qt (15 gal) → 2.01 cu ft × 0.85 = ~1.71 cu ft usable
-  // Professional: LTS ~18 gal → 2.41 cu ft × 0.85 = ~2.05 cu ft usable
-  const containerVol = { good: 0.57, better: 1.71, best: 2.05 };
-  const selectedVol = containerVol[data.containerTier] || 0.57;
-  const containerEstimate = Math.ceil(totalFoodVolume / selectedVol);
+  const bucketsNeeded = Math.ceil(totalBucketVol / CONTAINER_SYSTEM.bucket.volumeCuFt);
+  const binsNeeded    = Math.ceil(totalBinVol    / CONTAINER_SYSTEM.bin.volumeCuFt);
 
-  // ── Storage space fit check ──
+  // ── Space footprint estimate ──────────────────────────────────────────────
   const L = parseFloat(data.storageL) || 0;
   const W = parseFloat(data.storageW) || 0;
   const stackH = parseFloat(data.maxStack) || parseFloat(data.storageH) || 4;
+  const hasSpaceData = L > 0 && W > 0;
 
-  // Real physical dimensions of each container tier:
-  //
-  // Essential — 5-gallon HDPE bucket:
-  //   Diameter: ~12" → footprint 12"×12" = 1.0 sq ft
-  //   Height with Gamma Seal lid: ~14.5" = 1.21 ft
-  //
-  // Premium — IRIS USA WeatherPro 62qt / Sterilite 60qt:
-  //   Footprint: ~18.25" × 13.5" = 246 sq in = 1.71 sq ft
-  //   Height with lid: ~16.5" = 1.375 ft
-  //
-  // Professional — Safecastle/LTS heavy-duty (approx 20-gal):
-  //   Footprint: ~20" × 15" = 300 sq in = 2.08 sq ft
-  //   Height with lid: ~18.5" = 1.54 ft
+  const bucketStackH = Math.max(1, Math.floor(stackH / CONTAINER_SYSTEM.bucket.heightFt));
+  const binStackH    = Math.max(1, Math.floor(stackH / CONTAINER_SYSTEM.bin.heightFt));
 
-  const containerFootprint = { good: 1.00, better: 1.71, best: 2.08 }; // sq ft per container
-  const containerHeight    = { good: 1.21, better: 1.375, best: 1.54  }; // ft per container
-  const cFoot = containerFootprint[data.containerTier] || 1.00;
-  const cH    = containerHeight[data.containerTier]    || 1.21;
+  const bucketStacks = Math.ceil(bucketsNeeded / bucketStackH);
+  const binStacks    = Math.ceil(binsNeeded    / binStackH);
 
-  const containersPerStack = Math.max(1, Math.floor(stackH / cH));
-  const stacksNeeded       = Math.ceil(containerEstimate / containersPerStack);
-  const sqFtNeeded         = parseFloat((stacksNeeded * cFoot).toFixed(1));
-  const sqFtAvailable      = L * W;
-  const hasSpaceData       = L > 0 && W > 0;
-  const fits               = !hasSpaceData || sqFtNeeded <= sqFtAvailable;
-  const spaceOverflow      = hasSpaceData ? Math.max(0, sqFtNeeded - sqFtAvailable).toFixed(1) : 0;
+  const bucketSqFt = parseFloat((bucketStacks * CONTAINER_SYSTEM.bucket.footprintSqFt).toFixed(1));
+  const binSqFt    = parseFloat((binStacks    * CONTAINER_SYSTEM.bin.footprintSqFt).toFixed(1));
+  const totalSqFt  = parseFloat((bucketSqFt + binSqFt).toFixed(1));
+  const sqFtAvail  = L * W;
+  const fits       = !hasSpaceData || totalSqFt <= sqFtAvail;
+
+  // ── Cost estimate ─────────────────────────────────────────────────────────
+  const bucketCost = bucketsNeeded * CONTAINER_SYSTEM.bucket.priceEst;
+  const binCost    = binsNeeded    * CONTAINER_SYSTEM.bin.priceEst;
+  const myrlaKit   = Math.ceil((bucketsNeeded + binsNeeded) / 5) * 12; // ~$12 per 5-container kit
+  const totalCost  = bucketCost + binCost + myrlaKit;
+
+  const optOut = data.containerTier === "none";
 
   return (
-    <div style={{ position: "relative" }}>
-      <div style={styles.stepLabel}>Step 9 of 10 — Storage Containers</div>
-      <div style={styles.questionTitle}>Choose your container system.</div>
+    <div>
+      <div style={styles.stepLabel}>Step 9 of 10 — Storage System</div>
+      <div style={styles.questionTitle}>Your QuietReady storage system.</div>
       <div style={styles.questionSub}>
-        All tiers use the same brand throughout — ensuring a uniform, stackable, airtight system.
-        Your kit will include a label machine, blank label templates, and a personalized container map. When each shipment arrives, your portal will show exactly which container each product belongs in — just print the label and place it.
+        Every plan uses the same proven two-container system — optimized for what each type of food needs. Canned goods go on open shelving (we'll recommend options from your local hardware store).
       </div>
-      <div style={{ background: fits ? "#EDF2E8" : "#FDF5EE", padding: "14px 18px", marginBottom: fits ? "24px" : "0", fontFamily: "'Helvetica Neue', sans-serif", fontSize: "13px", color: fits ? COLORS.moss : COLORS.clay, border: fits ? "none" : `1px solid #F0C89A` }}>
-        📦 Estimated containers for {totalPeople} {totalPeople === 1 ? "person" : "people"}{totalPets > 0 ? ` + ${totalPets} pet${totalPets > 1 ? "s" : ""}` : ""}, {durationMonths >= 1 ? `${durationMonths} month${durationMonths > 1 ? "s" : ""}` : "2 weeks"}:{" "}
-        <strong>~{containerEstimate} containers</strong>
+
+      {/* ── Container count summary ── */}
+      <div style={{ background: fits ? "#EDF2E8" : "#FEF3E2", border: `1.5px solid ${fits ? COLORS.sage : COLORS.clay}`, padding: "16px 20px", marginBottom: "20px" }}>
+        <div style={{ fontSize: "11px", letterSpacing: "3px", textTransform: "uppercase", color: COLORS.clay, fontFamily: "'Helvetica Neue', sans-serif", marginBottom: "8px" }}>
+          Your estimated kit — {totalPeople} {totalPeople === 1 ? "person" : "people"}{totalPets > 0 ? ` + ${totalPets} pet${totalPets > 1 ? "s" : ""}` : ""}, {months} month{months > 1 ? "s" : ""}
+        </div>
+        <div style={{ display: "flex", gap: "24px", flexWrap: "wrap" }}>
+          <div>
+            <div style={{ fontSize: "28px", fontWeight: "700", color: COLORS.bark, letterSpacing: "-1px" }}>{bucketsNeeded}</div>
+            <div style={{ fontSize: "12px", color: COLORS.stone, fontFamily: "'Helvetica Neue', sans-serif" }}>5-gal Gamma Seal buckets</div>
+          </div>
+          <div>
+            <div style={{ fontSize: "28px", fontWeight: "700", color: COLORS.bark, letterSpacing: "-1px" }}>{binsNeeded}</div>
+            <div style={{ fontSize: "12px", color: COLORS.stone, fontFamily: "'Helvetica Neue', sans-serif" }}>IRIS 82qt WeatherPro bins</div>
+          </div>
+          <div>
+            <div style={{ fontSize: "28px", fontWeight: "700", color: COLORS.clay, letterSpacing: "-1px" }}>~${totalCost}</div>
+            <div style={{ fontSize: "12px", color: COLORS.stone, fontFamily: "'Helvetica Neue', sans-serif" }}>est. container kit total</div>
+          </div>
+        </div>
         {hasSpaceData && (
-          <span style={{ color: COLORS.stone }}> · needs ~{sqFtNeeded.toFixed(1)} sq ft ({containersPerStack} high)</span>
+          <div style={{ marginTop: "10px", fontSize: "12px", color: fits ? COLORS.moss : COLORS.clay, fontFamily: "'Helvetica Neue', sans-serif" }}>
+            {fits
+              ? `✓ Fits in your ${L}′ × ${W}′ space — needs ~${totalSqFt} sq ft total`
+              : `⚠️ Needs ~${totalSqFt} sq ft — your ${L}′ × ${W}′ space has ${sqFtAvail} sq ft`
+            }
+          </div>
         )}
       </div>
 
-      {/* Space warning */}
-      {!fits && (
-        <div style={{ background: "#FEF3E2", border: `1.5px solid ${COLORS.clay}`, padding: "16px 18px", marginBottom: "24px", fontFamily: "'Helvetica Neue', sans-serif", fontSize: "13px", color: COLORS.bark, lineHeight: "1.6" }}>
-          ⚠️ <strong>Storage space may be tight.</strong> Your {L}′ × {W}′ space ({sqFtAvailable} sq ft) is approximately <strong>{spaceOverflow} sq ft short</strong> of what's needed for {containerEstimate} containers at this tier.
-          <div style={{ marginTop: "8px", color: COLORS.stone }}>
-            Options: choose a larger container tier (fewer, bigger containers), expand to multiple storage locations, or reduce your coverage duration. Your storage map in the portal will help optimize placement.
-          </div>
-        </div>
-      )}
-      <div style={{ background: "#FDF5EE", padding: "14px 18px", marginBottom: "24px", fontFamily: "'Helvetica Neue', sans-serif", fontSize: "13px", color: COLORS.clay, border: `1px solid #F0C89A` }}>
-        💳 If your container kit exceeds your monthly budget, we'll offer a one-time supplemental charge so you can get fully set up from day one.
-      </div>
-      {data.foodPhilosophy === "wholeFood" && (
-        <div style={{ background: "#EDF2E8", padding: "14px 18px", marginBottom: "16px", fontFamily: "'Helvetica Neue', sans-serif", fontSize: "13px", color: COLORS.moss, border: `1px solid ${COLORS.sage}` }}>
-          🌾 <strong>Whole Foods note:</strong> Your plan includes bulk grains, legumes, and seeds which require food-grade buckets with gamma seal lids and oxygen absorbers for proper long-term storage. The Essential and Premium tiers both support this — the Professional tier includes oxygen absorbers in the kit.
-        </div>
-      )}
-      {tiers.map((tier) => {
-        const info = brandInfo[tier.brand];
-        return (
-          <div
-            key={tier.key}
-            style={{ ...styles.containerCard, ...(data.containerTier === tier.key ? styles.containerCardSelected : {}) }}
-            onClick={() => setData({ ...data, containerTier: tier.key })}
-          >
-            <div style={styles.containerTier}>
-              <div>
-                <div style={styles.containerName}>
-                  {tier.name}{" "}
-                  {/* Brand name with hover tooltip trigger */}
-                  <span
-                    style={{ fontSize: "13px", color: COLORS.stone, fontFamily: "'Helvetica Neue', sans-serif", fontWeight: "400", position: "relative" }}
-                    onClick={(e) => e.stopPropagation()}
-                    onMouseEnter={() => setHoveredBrand(tier.brand)}
-                    onMouseLeave={() => setHoveredBrand(null)}
-                  >
-                    — <span style={{
-                      borderBottom: `1.5px dashed ${COLORS.stone}`,
-                      cursor: "help",
-                      color: hoveredBrand === tier.brand ? COLORS.clay : COLORS.stone,
-                      transition: "color 0.15s",
-                    }}>{tier.brand}</span> <span style={{ fontSize: "11px", color: COLORS.clay }}>ⓘ</span>
+      {/* ── Two container cards ── */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px", marginBottom: "20px" }}>
 
-                    {/* Tooltip infobox */}
-                    {hoveredBrand === tier.brand && (
-                      <div
-                        style={{
-                          position: "absolute",
-                          top: "28px",
-                          left: "0",
-                          zIndex: 100,
-                          width: "340px",
-                          background: COLORS.white,
-                          border: `1.5px solid ${COLORS.clay}`,
-                          boxShadow: "0 8px 24px rgba(0,0,0,0.12)",
-                          padding: "18px 20px",
-                          fontFamily: "'Helvetica Neue', sans-serif",
-                        }}
-                      >
-                        <div style={{ fontWeight: "700", fontSize: "14px", color: COLORS.bark, marginBottom: "8px" }}>{info.title}</div>
-                        <div style={{ fontSize: "12px", color: COLORS.stone, lineHeight: "1.6", marginBottom: "12px" }}>{info.body}</div>
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
-                          <div>
-                            <div style={{ fontSize: "10px", letterSpacing: "2px", textTransform: "uppercase", color: COLORS.moss, marginBottom: "6px" }}>Pros</div>
-                            {info.pros.map((p, i) => (
-                              <div key={i} style={{ fontSize: "11px", color: COLORS.bark, display: "flex", gap: "5px", marginBottom: "3px" }}>
-                                <span style={{ color: COLORS.moss, flexShrink: 0 }}>✓</span>{p}
-                              </div>
-                            ))}
-                          </div>
-                          <div>
-                            <div style={{ fontSize: "10px", letterSpacing: "2px", textTransform: "uppercase", color: COLORS.clay, marginBottom: "6px" }}>Cons</div>
-                            {info.cons.map((c, i) => (
-                              <div key={i} style={{ fontSize: "11px", color: COLORS.bark, display: "flex", gap: "5px", marginBottom: "3px" }}>
-                                <span style={{ color: COLORS.clay, flexShrink: 0 }}>·</span>{c}
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </span>
-                </div>
-                <div style={styles.containerStars}>{tier.stars} <span style={{ color: COLORS.clay, fontFamily: "'Helvetica Neue', sans-serif", fontSize: "13px", fontWeight: "700" }}>{tier.price}</span></div>
-              </div>
-              <div style={{ textAlign: "right" }}>
-                <div style={styles.containerPrice}>{tier.price}</div>
-                <div style={{ fontSize: "12px", color: COLORS.stone, fontFamily: "'Helvetica Neue', sans-serif" }}>{tier.estCost}</div>
-              </div>
-            </div>
-            <ul style={styles.containerFeatures}>
-              {tier.features.map((f, i) => (
-                <li key={i} style={styles.containerFeature}><span style={{ color: COLORS.sage }}>✓</span> {f}</li>
-              ))}
-            </ul>
+        {/* Gamma Seal Bucket */}
+        <div style={{ background: COLORS.white, border: `1.5px solid ${COLORS.mist}`, padding: "20px" }}>
+          <div style={{ fontSize: "28px", marginBottom: "8px" }}>🪣</div>
+          <div style={{ fontSize: "15px", fontWeight: "700", color: COLORS.bark, marginBottom: "4px" }}>5-Gal Gamma Seal Bucket</div>
+          <div style={{ fontSize: "11px", color: COLORS.clay, fontFamily: "'Helvetica Neue', sans-serif", fontWeight: "600", letterSpacing: "1px", textTransform: "uppercase", marginBottom: "10px" }}>
+            Sourced from Uline
           </div>
-        );
-      })}
+          <div style={{ fontSize: "12px", color: COLORS.stone, fontFamily: "'Helvetica Neue', sans-serif", lineHeight: "1.6", marginBottom: "12px" }}>
+            Food-grade HDPE with Gamma Seal spin-off lid. The gold standard for bulk dry goods. Used with Mylar bags + oxygen absorbers for 25-year storage.
+          </div>
+          <div style={{ fontSize: "11px", color: COLORS.stone, fontFamily: "'Helvetica Neue', sans-serif", marginBottom: "4px" }}>
+            <strong style={{ color: COLORS.bark }}>What goes in here:</strong>
+          </div>
+          {["Wheat berries & whole grains", "White rice & oats", "Dried beans & lentils", "Flour, sugar, powdered milk", "Dried herbs & bulk spices"].map((item, i) => (
+            <div key={i} style={{ fontSize: "12px", color: COLORS.stone, fontFamily: "'Helvetica Neue', sans-serif", display: "flex", gap: "6px" }}>
+              <span style={{ color: COLORS.sage, flexShrink: 0 }}>✓</span>{item}
+            </div>
+          ))}
+          <div style={{ marginTop: "12px", padding: "8px 10px", background: "#EDF2E8", fontSize: "11px", color: COLORS.moss, fontFamily: "'Helvetica Neue', sans-serif", fontWeight: "600" }}>
+            {bucketsNeeded} buckets in your plan · ~${bucketCost} est.
+          </div>
+        </div>
+
+        {/* IRIS Remington Bin */}
+        <div style={{ background: COLORS.white, border: `1.5px solid ${COLORS.mist}`, padding: "20px" }}>
+          <div style={{ fontSize: "28px", marginBottom: "8px" }}>📦</div>
+          <div style={{ fontSize: "15px", fontWeight: "700", color: COLORS.bark, marginBottom: "4px" }}>IRIS Remington 82qt Bin</div>
+          <div style={{ fontSize: "11px", color: COLORS.clay, fontFamily: "'Helvetica Neue', sans-serif", fontWeight: "600", letterSpacing: "1px", textTransform: "uppercase", marginBottom: "10px" }}>
+            Sourced from IRIS USA
+          </div>
+          <div style={{ fontSize: "12px", color: COLORS.stone, fontFamily: "'Helvetica Neue', sans-serif", lineHeight: "1.6", marginBottom: "12px" }}>
+            WeatherPro® gasket seal with metal buckles. 30"×16"×15" stackable bin — perfect for packaged items, freeze-dried pouches, and larger goods.
+          </div>
+          <div style={{ fontSize: "11px", color: COLORS.stone, fontFamily: "'Helvetica Neue', sans-serif", marginBottom: "4px" }}>
+            <strong style={{ color: COLORS.bark }}>What goes in here:</strong>
+          </div>
+          {["Pasta, crackers & packaged dry goods", "Freeze-dried pouches & #10 cans", "Nut butters, oils (sealed)", "Pantry kit items", "Pet food (separate bins)"].map((item, i) => (
+            <div key={i} style={{ fontSize: "12px", color: COLORS.stone, fontFamily: "'Helvetica Neue', sans-serif", display: "flex", gap: "6px" }}>
+              <span style={{ color: COLORS.sage, flexShrink: 0 }}>✓</span>{item}
+            </div>
+          ))}
+          <div style={{ marginTop: "12px", padding: "8px 10px", background: "#EDF2E8", fontSize: "11px", color: COLORS.moss, fontFamily: "'Helvetica Neue', sans-serif", fontWeight: "600" }}>
+            {binsNeeded} bins in your plan · ~${binCost} est.
+          </div>
+        </div>
+      </div>
+
+      {/* ── Mylar + O2 included ── */}
+      <div style={{ background: "#FDF5EE", border: `1px solid #F0C89A`, padding: "14px 18px", marginBottom: "16px", display: "flex", gap: "12px", alignItems: "flex-start" }}>
+        <span style={{ fontSize: "20px", flexShrink: 0 }}>🛡️</span>
+        <div style={{ fontFamily: "'Helvetica Neue', sans-serif" }}>
+          <div style={{ fontSize: "13px", fontWeight: "700", color: COLORS.bark, marginBottom: "3px" }}>
+            Mylar bags + oxygen absorbers included
+          </div>
+          <div style={{ fontSize: "12px", color: COLORS.stone, lineHeight: "1.6" }}>
+            Every plan includes an assortment of resealable Mylar bags and oxygen absorbers sized for your bucket count. When your shipment arrives, we include step-by-step sealing instructions — no guesswork.
+          </div>
+        </div>
+      </div>
+
+      {/* ── Canned goods note ── */}
+      <div style={{ background: COLORS.white, border: `1px solid ${COLORS.mist}`, padding: "14px 18px", marginBottom: "20px", display: "flex", gap: "12px", alignItems: "flex-start" }}>
+        <span style={{ fontSize: "20px", flexShrink: 0 }}>🥫</span>
+        <div style={{ fontFamily: "'Helvetica Neue', sans-serif" }}>
+          <div style={{ fontSize: "13px", fontWeight: "700", color: COLORS.bark, marginBottom: "3px" }}>
+            Canned goods use open shelving — not containers
+          </div>
+          <div style={{ fontSize: "12px", color: COLORS.stone, lineHeight: "1.6" }}>
+            Canned goods don't need airtight storage — they're already sealed. Simple wire or wood shelving from your local hardware store (Home Depot, Lowe's) is all you need. Your container map will include a shelving layout recommendation.
+          </div>
+        </div>
+      </div>
+
+      {/* ── Opt out ── */}
       <CheckRow
         label="No thanks — I already have containers"
         desc="Skip the container kit; we'll focus on food and supplies"
-        checked={data.containerTier === "none"}
-        onClick={() => setData({ ...data, containerTier: "none" })}
+        checked={optOut}
+        onClick={() => setData({ ...data, containerTier: optOut ? "standard" : "none" })}
       />
+
+      {/* Set standard as default if not yet chosen */}
+      {!data.containerTier && (() => { setData({ ...data, containerTier: "standard" }); return null; })()}
     </div>
   );
 }
@@ -1892,7 +1823,7 @@ function StepPlan({ data, setData }) {
   const budget = data.monthlyBudget || 150;
   const productBudget = ((budget - 30) / 1.1).toFixed(0);
   const durationLabel = { "2weeks": "2 Weeks", "1month": "1 Month", "3months": "3 Months", "6months": "6 Months", "1year": "1 Year" }[data.duration] || "3 Months";
-  const containerLabel = { good: "Essential ($)", better: "Premium ($$$)", best: "Professional ($$$$$)", none: "None (skipped)" }[data.containerTier] || "Essential";
+  const containerLabel = { standard: "Gamma Seal buckets + IRIS 82qt bins", none: "None (already have containers)" }[data.containerTier] || "QuietReady Standard System";
   const coverageMonths = data.coverageMonths || 3;
   const months = coverageMonths;
   const philosophy = data.foodPhilosophy || "balanced";
@@ -2730,7 +2661,7 @@ function HouseholdChangeModal({ currentHousehold, currentPets, authToken, onSave
 
 
 // ── ActivateModal ─────────────────────────────────────────────────────────────
-function ActivateModal({ customer, authToken, onActivated, onClose, containerCostTotal = 0, containerTier = "good" }) {
+function ActivateModal({ customer, authToken, onActivated, onClose, containerCostTotal = 0, containerTier = "standard" }) {
   const [step, setStep] = useState(1); // 1=address, 2=payment
   const [billingAddress, setBillingAddress] = useState({ line1: "", line2: "", city: "", state: "", zip: "", country: "US" });
   const [shippingAddress, setShippingAddress] = useState({ line1: "", line2: "", city: "", state: "", zip: "", country: "US" });
@@ -2911,7 +2842,7 @@ function ActivateModal({ customer, authToken, onActivated, onClose, containerCos
 
               {/* Container payment choice — props computed in Portal to avoid snake_case/camelCase issues */}
               {containerTier !== "none" && containerCostTotal > 0 && (() => {
-                const tierLabel = { good: "Essential", better: "Premium", best: "Professional" }[containerTier] || "Essential";
+                const tierLabel = containerTier === "none" ? "None" : "QuietReady Standard Kit";
                 const perMonth  = Math.ceil(containerCostTotal / 3);
                 const optStyle  = (active) => ({
                   flex: 1, padding: "12px 14px", borderRadius: "8px", cursor: "pointer",
@@ -3014,7 +2945,44 @@ const EQUIPMENT_CATALOG = [
   { key: "sleepingBags",      label: "Cold-Weather Sleeping Bags",    desc: "Rated to 0°F",                               price: 89,  cat: "Warmth & Shelter",       catIcon: "🏕️" },
 ];
 
-const CONTAINER_PRICES = { good: 8, better: 22, best: 45 }; // est. per container
+// ── QuietReady Standard Container System ────────────────────────────────────
+// All plans use the same two-container mix. No tiers. No choices (except opt-out).
+//
+// BUCKET: 5-gallon HDPE food-grade bucket + Gamma Seal lid (sourced from Uline)
+//   Footprint: 12" × 12" = 1.0 sq ft  |  Height: 14.5" = 1.208 ft
+//   Usable volume: 0.57 cu ft (5 gal × 0.85 fill efficiency)
+//   Used for: bulk dry goods in Mylar bags — grains, legumes, oats, sugar, flour, etc.
+//   Price est: ~$18/bucket + lid
+//
+// BIN: IRIS Remington 82 QT WeatherPro Gasket Box (sourced from IRIS USA directly)
+//   Footprint: 30" × 16" = 3.33 sq ft  |  Height: 15.3" = 1.275 ft
+//   Usable volume: 2.33 cu ft (82 qt × 0.85 fill efficiency)
+//   Used for: packaged dry goods, freeze-dried pouches/cans, mylar-bagged loose items
+//   Price est: ~$50/bin
+//
+// MYLAR + O2: Assorted resealable Mylar bags + oxygen absorbers included with every plan.
+//
+// CANNED GOODS: NOT stored in containers. Cans go on open shelving (customer-supplied).
+//   Customers can get wire/wood shelving from their local hardware store.
+//   Canned goods are excluded from all container volume calculations.
+const CONTAINER_SYSTEM = {
+  bucket: {
+    label:        "5-gal Gamma Seal Bucket",
+    source:       "Uline",
+    footprintSqFt: 1.0,
+    heightFt:     1.208,
+    volumeCuFt:   0.57,
+    priceEst:     18,
+  },
+  bin: {
+    label:        "IRIS Remington 82qt WeatherPro Bin",
+    source:       "IRIS USA",
+    footprintSqFt: 3.33,
+    heightFt:     1.275,
+    volumeCuFt:   2.33,
+    priceEst:     50,
+  },
+};
 
 // ── ExtrasSection ─────────────────────────────────────────────────────────────
 function ExtrasSection({ formData, authToken, isPreview }) {
@@ -3024,17 +2992,22 @@ function ExtrasSection({ formData, authToken, isPreview }) {
 
   useEffect(() => { setLocalEquip(formData?.preferences?.equipment || {}); }, [formData]);
 
-  // Derive container info
-  const containerTier   = formData?.containerTier || "good";
-  const containerLabel  = { good: "Essential", better: "Premium", best: "Professional" }[containerTier] || "Essential";
+  // Derive container info — new standard system (buckets + bins)
+  const containerTier   = formData?.containerTier || "standard";
+  const containerLabel  = containerTier === "none" ? "None (already have containers)" : "Gamma Seal Buckets + IRIS 82qt Bins";
   const totalPeople     = Object.values(formData?.household || {}).reduce((s, v) => s + (typeof v === "number" ? v : 0), 0) || 2;
   const months          = formData?.coverageMonths || 3;
   const philosophy      = formData?.foodPhilosophy || "balanced";
-  const containerVolume = { good: 0.57, better: 1.71, best: 2.05 }[containerTier] || 0.57;
-  const volPPM          = { wholeFood: 2.2, balanced: 1.9, freezeDried: 1.4, noPreference: 1.6 }[philosophy] || 1.9;
-  const containerCount  = Math.ceil((totalPeople * volPPM * months) / containerVolume);
-  const containerUnitPrice = CONTAINER_PRICES[containerTier] || 8;
-  const containerTotal  = containerCount * containerUnitPrice;
+
+  const bucketVolPPM_es = { wholeFood: 1.40, balanced: 0.80, freezeDried: 0.20, noPreference: 0.70 }[philosophy] || 0.80;
+  const binVolPPM_es    = { wholeFood: 0.40, balanced: 0.70, freezeDried: 1.10, noPreference: 0.40 }[philosophy] || 0.70;
+  const containerCount  = containerTier === "none" ? 0 :
+    Math.ceil((totalPeople * bucketVolPPM_es * months) / CONTAINER_SYSTEM.bucket.volumeCuFt) +
+    Math.ceil((totalPeople * binVolPPM_es    * months) / CONTAINER_SYSTEM.bin.volumeCuFt);
+  const bucketsEs = containerTier === "none" ? 0 : Math.ceil((totalPeople * bucketVolPPM_es * months) / CONTAINER_SYSTEM.bucket.volumeCuFt);
+  const binsEs    = containerTier === "none" ? 0 : Math.ceil((totalPeople * binVolPPM_es    * months) / CONTAINER_SYSTEM.bin.volumeCuFt);
+  const containerUnitPrice = Math.round((bucketsEs * CONTAINER_SYSTEM.bucket.priceEst + binsEs * CONTAINER_SYSTEM.bin.priceEst) / Math.max(1, containerCount));
+  const containerTotal  = bucketsEs * CONTAINER_SYSTEM.bucket.priceEst + binsEs * CONTAINER_SYSTEM.bin.priceEst + Math.ceil((bucketsEs + binsEs) / 5) * 12;
 
   // Selected equipment items, ordered by catalog position
   const selectedItems   = EQUIPMENT_CATALOG.filter(i => localEquip[i.key]);
@@ -3090,8 +3063,10 @@ function ExtrasSection({ formData, authToken, isPreview }) {
         </div>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 18px" }}>
           <div>
-            <div style={{ fontSize: "13px", fontWeight: "600", color: COLORS.bark, fontFamily: "'Helvetica Neue', sans-serif" }}>{containerCount}× {containerLabel} containers</div>
-            <div style={{ fontSize: "11px", color: COLORS.stone, fontFamily: "'Helvetica Neue', sans-serif", marginTop: "2px" }}>Delivered with your first food shipment · est. ${containerUnitPrice}/container</div>
+            <div style={{ fontSize: "13px", fontWeight: "600", color: COLORS.bark, fontFamily: "'Helvetica Neue', sans-serif" }}>
+              {bucketsEs}× Gamma Seal 5-gal buckets + {binsEs}× IRIS 82qt WeatherPro bins
+            </div>
+            <div style={{ fontSize: "11px", color: COLORS.stone, fontFamily: "'Helvetica Neue', sans-serif", marginTop: "2px" }}>Delivered with your first food shipment · includes Mylar bags + oxygen absorbers</div>
           </div>
           <div style={{ fontSize: "11px", color: COLORS.stone, fontFamily: "'Helvetica Neue', sans-serif", textAlign: "right" }}>
             <div style={{ fontWeight: "600", color: COLORS.clay }}>Est. retail</div>
@@ -3263,7 +3238,7 @@ function PlanTab({ customer, formData, authToken, isPreview, onActivate, onUpdat
   const costIndex     = formData?.costIndex || null;
 
   const philosophyLabel = { wholeFood: "Whole Foods First", balanced: "Balanced Mix", freezeDried: "Freeze-Dried", noPreference: "Best Value" }[philosophy] || "Balanced Mix";
-  const containerLabel  = { good: "Essential", better: "Premium", best: "Professional" }[formData?.containerTier] || "Essential";
+  const containerLabel  = formData?.containerTier === "none" ? "None (already have containers)" : "Gamma Seal buckets + IRIS 82qt bins";
 
   // ── CBI-derived cost calculation ──────────────────────────────
   // Use real cost-per-calorie from live Kroger price data.
@@ -3411,17 +3386,20 @@ function PlanTab({ customer, formData, authToken, isPreview, onActivate, onUpdat
   const equipMidpoint     = Math.ceil(equipmentSelected.length / 2);
   const equipShip1        = equipmentSelected.slice(0, equipMidpoint);
   const equipShip2        = equipmentSelected.slice(equipMidpoint);
-  const cTier             = formData?.containerTier || "good";
-  const cLabel            = { good: "Essential", better: "Premium", best: "Professional" }[cTier] || "Essential";
-  const cVol              = { good: 0.57, better: 1.71, best: 2.05 }[cTier] || 0.57;
-  const cVolPPM           = { wholeFood: 2.2, balanced: 1.9, freezeDried: 1.4, noPreference: 1.6 }[philosophy] || 1.9;
-  const cCount            = Math.ceil((totalPeople * cVolPPM * months) / cVol);
-  const cUnitPrice        = CONTAINER_PRICES[cTier] || 8;
+  const cTier             = formData?.containerTier || "standard";
+  const cLabel            = cTier === "none" ? "None" : "Gamma Seal buckets + IRIS 82qt bins";
+  const bucketVolPPM_pt   = { wholeFood: 1.40, balanced: 0.80, freezeDried: 0.20, noPreference: 0.70 }[philosophy] || 0.80;
+  const binVolPPM_pt      = { wholeFood: 0.40, balanced: 0.70, freezeDried: 1.10, noPreference: 0.40 }[philosophy] || 0.70;
+  const cBuckets          = cTier === "none" ? 0 : Math.ceil((totalPeople * bucketVolPPM_pt * months) / CONTAINER_SYSTEM.bucket.volumeCuFt);
+  const cBins             = cTier === "none" ? 0 : Math.ceil((totalPeople * binVolPPM_pt    * months) / CONTAINER_SYSTEM.bin.volumeCuFt);
+  const cCount            = cBuckets + cBins;
+  const cUnitPrice        = cCount > 0 ? Math.round((cBuckets * CONTAINER_SYSTEM.bucket.priceEst + cBins * CONTAINER_SYSTEM.bin.priceEst) / cCount) : 0;
 
   // What non-food extras ship in each month
   const shipmentExtras = {
     1: [
-      { label: `${cCount}× ${cLabel} storage containers`, price: cCount * cUnitPrice, icon: "📦" },
+      { label: `${cBuckets}× Gamma Seal 5-gal buckets (Uline) + ${cBins}× IRIS 82qt WeatherPro bins`, price: cBuckets * CONTAINER_SYSTEM.bucket.priceEst + cBins * CONTAINER_SYSTEM.bin.priceEst, icon: "📦" },
+      { label: "Mylar bags assortment + oxygen absorbers", price: Math.ceil((cBuckets + cBins) / 5) * 12, icon: "🛡️" },
       ...equipShip1.map(i => ({ label: i.label, price: i.price, icon: "🛠️" })),
     ],
     2: equipShip2.map(i => ({ label: i.label, price: i.price, icon: "🛠️" })),
@@ -3613,55 +3591,51 @@ function PlanTab({ customer, formData, authToken, isPreview, onActivate, onUpdat
 
 // ── ContainerMapTab ───────────────────────────────────────────────────────────
 function ContainerMapTab({ customer, formData, isPreview }) {
-  const months      = formData?.coverageMonths || 3;
-  const philosophy  = formData?.foodPhilosophy || "balanced";
-  const containerTier = formData?.containerTier || "good";
-  const totalPeople = Object.values(formData?.household || {})
+  const months        = formData?.coverageMonths || 3;
+  const philosophy    = formData?.foodPhilosophy || "balanced";
+  const containerTier = formData?.containerTier || "standard";
+  const totalPeople   = Object.values(formData?.household || {})
     .reduce((s, v) => s + (typeof v === "number" ? v : 0), 0) || 2;
 
-  const containerLabel  = { good: "Essential", better: "Premium", best: "Professional" }[containerTier] || "Essential";
-  const containerVolume = { good: 0.57, better: 1.71, best: 2.05 }[containerTier] || 0.57;
-  const volPPM          = { wholeFood: 2.2, balanced: 1.9, freezeDried: 1.4, noPreference: 1.6 }[philosophy] || 1.9;
-  const totalVolume     = totalPeople * volPPM * months;
-  const containerCount  = Math.ceil(totalVolume / containerVolume);
+  const bucketVolPPM_cm = { wholeFood: 1.40, balanced: 0.80, freezeDried: 0.20, noPreference: 0.70 }[philosophy] || 0.80;
+  const binVolPPM_cm    = { wholeFood: 0.40, balanced: 0.70, freezeDried: 1.10, noPreference: 0.40 }[philosophy] || 0.70;
+  const bucketCount     = containerTier === "none" ? 0 : Math.ceil((totalPeople * bucketVolPPM_cm * months) / CONTAINER_SYSTEM.bucket.volumeCuFt);
+  const binCount        = containerTier === "none" ? 0 : Math.ceil((totalPeople * binVolPPM_cm    * months) / CONTAINER_SYSTEM.bin.volumeCuFt);
+  const totalVolume     = (totalPeople * (bucketVolPPM_cm + binVolPPM_cm)) * months;
 
-  // Category color map for container cards
-  const categoryColors = {
-    "Grains":      { bg: "#FDF9EE", accent: "#C4A84A" },
-    "Protein":     { bg: "#FDEEED", accent: "#C45A4A" },
-    "Vegetables":  { bg: "#EDF2E8", accent: "#4A5C3A" },
-    "Fruit":       { bg: "#FEF6ED", accent: "#C4773B" },
-    "Ready Meals": { bg: "#F0EEFA", accent: "#6B4AC4" },
-    "Dairy":       { bg: "#EDF6FD", accent: "#4A7EC4" },
-    "Fats":        { bg: "#FAFDED", accent: "#8A9A2A" },
-    "Sweeteners":  { bg: "#FEF6ED", accent: "#C4773B" },
-    "Pantry":      { bg: "#F5F2EE", accent: "#8C8278" },
-    "Water":       { bg: "#EDF6FD", accent: "#4A7EC4" },
-    "Entrees":     { bg: "#FDEEED", accent: "#C45A4A" },
-  };
+  // Bucket categories (bulk dry goods in Mylar)
+  const bucketCategories = {
+    wholeFood:    ["Wheat Berries", "Brown Rice", "White Rice", "Oats", "Lentils", "Beans", "Flour", "Sugar"],
+    balanced:     ["White Rice", "Oats", "Lentils", "Beans", "Pasta (bulk)"],
+    freezeDried:  ["Oats", "Sugar"],
+    noPreference: ["White Rice", "Lentils", "Beans", "Oats"],
+  }[philosophy] || ["White Rice", "Oats", "Lentils", "Beans"];
 
-  // Assign food categories to containers (simplified even distribution)
-  const categories = {
-    wholeFood:    ["Grains", "Grains", "Protein", "Protein", "Vegetables", "Fruit", "Fats", "Pantry", "Water"],
-    balanced:     ["Grains", "Grains", "Protein", "Protein", "Vegetables", "Ready Meals", "Fruit", "Dairy", "Pantry", "Water"],
-    freezeDried:  ["Entrees", "Entrees", "Protein", "Vegetables", "Grains", "Water"],
-    noPreference: ["Grains", "Protein", "Protein", "Vegetables", "Ready Meals", "Pantry", "Water"],
-  };
+  // Bin categories (packaged items — NO cans)
+  const binCategories = {
+    wholeFood:    ["Dried Fruit", "Olive Oil", "Pantry Kit", "Spices"],
+    balanced:     ["Pasta (pkg)", "Nut Butters", "Pantry Kit", "Freeze-Dried", "Oils", "Sweeteners"],
+    freezeDried:  ["FD Chicken + Rice", "FD Pasta", "FD Beef Stew", "FD Veg", "Instant Rice", "Pantry Kit"],
+    noPreference: ["Pasta (pkg)", "Peanut Butter", "Pantry Kit", "Oils"],
+  }[philosophy] || ["Pasta (pkg)", "Nut Butters", "Pantry Kit", "Oils"];
 
-  const catList = categories[philosophy] || categories.balanced;
+  const rows = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
 
-  // Build container objects
-  const rows    = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
-  const containers = Array.from({ length: Math.min(containerCount, 48) }, (_, i) => {
-    const row  = rows[Math.floor(i / 4)];
-    const slot = (i % 4) + 1;
-    const cat  = catList[i % catList.length];
-    return { code: `${row}-${slot}`, category: cat, index: i };
-  });
+  // Build bucket objects
+  const buckets = Array.from({ length: Math.min(bucketCount, 30) }, (_, i) => ({
+    code:     `B-${rows[Math.floor(i / 4)]}${(i % 4) + 1}`,
+    type:     "bucket",
+    category: bucketCategories[i % bucketCategories.length],
+    index:    i,
+  }));
 
-  // Detect if we have DB container data (post-activation)
-  const dbContainers = formData?.containers || [];
-  const useDbData    = dbContainers.length > 0;
+  // Build bin objects
+  const bins = Array.from({ length: Math.min(binCount, 20) }, (_, i) => ({
+    code:     `N-${rows[Math.floor(i / 3)]}${(i % 3) + 1}`,
+    type:     "bin",
+    category: binCategories[i % binCategories.length],
+    index:    i,
+  }));
 
   return (
     <div>
@@ -3669,42 +3643,81 @@ function ContainerMapTab({ customer, formData, isPreview }) {
       <div style={{ marginBottom: "24px" }}>
         <div style={{ fontSize: "11px", letterSpacing: "3px", textTransform: "uppercase", color: COLORS.clay, marginBottom: "6px", fontFamily: "'Helvetica Neue', sans-serif" }}>Your Storage Map</div>
         <div style={{ fontSize: "26px", fontWeight: "700", color: COLORS.bark, letterSpacing: "-0.8px", marginBottom: "6px" }}>
-          {containerCount} {containerLabel} containers
+          {bucketCount} buckets + {binCount} bins
         </div>
         <div style={{ fontSize: "14px", color: COLORS.stone, fontFamily: "'Helvetica Neue', sans-serif" }}>
-          {totalPeople} people · {months} months coverage · {(totalVolume).toFixed(1)} cu ft total storage
+          {totalPeople} people · {months} months · canned goods use open shelving (not included)
         </div>
       </div>
 
-      {/* Category legend */}
-      <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginBottom: "20px" }}>
-        {[...new Set(catList)].map(cat => {
-          const colors = categoryColors[cat] || { bg: COLORS.cream, accent: COLORS.stone };
-          return (
-            <div key={cat} style={{ display: "flex", alignItems: "center", gap: "6px", background: colors.bg, border: `1px solid ${colors.accent}30`, borderRadius: "20px", padding: "3px 12px" }}>
-              <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: colors.accent, flexShrink: 0 }} />
-              <span style={{ fontSize: "11px", fontFamily: "'Helvetica Neue', sans-serif", color: COLORS.bark, fontWeight: "600" }}>{cat}</span>
-            </div>
-          );
-        })}
+      {/* System legend */}
+      <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", marginBottom: "20px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px", background: "#EDF2E8", border: `1px solid ${COLORS.sage}30`, borderRadius: "20px", padding: "5px 14px" }}>
+          <span style={{ fontSize: "14px" }}>🪣</span>
+          <span style={{ fontSize: "11px", fontFamily: "'Helvetica Neue', sans-serif", color: COLORS.bark, fontWeight: "600" }}>5-gal Gamma Seal Bucket (B-xx) — bulk dry goods in Mylar</span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px", background: "#FEF6ED", border: `1px solid ${COLORS.clay}30`, borderRadius: "20px", padding: "5px 14px" }}>
+          <span style={{ fontSize: "14px" }}>📦</span>
+          <span style={{ fontSize: "11px", fontFamily: "'Helvetica Neue', sans-serif", color: COLORS.bark, fontWeight: "600" }}>IRIS 82qt WeatherPro Bin (N-xx) — packaged goods</span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px", background: COLORS.cream, border: `1px solid ${COLORS.mist}`, borderRadius: "20px", padding: "5px 14px" }}>
+          <span style={{ fontSize: "14px" }}>🥫</span>
+          <span style={{ fontSize: "11px", fontFamily: "'Helvetica Neue', sans-serif", color: COLORS.stone, fontWeight: "600" }}>Canned goods → open shelving (hardware store)</span>
+        </div>
       </div>
 
-      {/* Container grid */}
-      <div style={{ background: COLORS.white, border: `1px solid ${COLORS.mist}`, borderRadius: "12px", padding: "24px", marginBottom: "16px" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(90px, 1fr))", gap: "10px" }}>
-          {containers.map((c) => {
-            const colors = categoryColors[c.category] || { bg: COLORS.cream, accent: COLORS.stone };
-            return (
-              <div key={c.code} style={{ background: isPreview && c.index > 0 ? COLORS.cream : colors.bg, border: `1.5px solid ${isPreview && c.index > 0 ? COLORS.mist : colors.accent + "60"}`, borderRadius: "8px", padding: "10px 8px", textAlign: "center", position: "relative" }}>
-                <div style={{ fontSize: "13px", fontWeight: "700", color: COLORS.moss, fontFamily: "'Helvetica Neue', sans-serif" }}>{c.code}</div>
+      {/* Bucket grid */}
+      {buckets.length > 0 && (
+        <div style={{ background: COLORS.white, border: `1px solid ${COLORS.mist}`, borderRadius: "12px", padding: "20px", marginBottom: "12px" }}>
+          <div style={{ fontSize: "11px", letterSpacing: "2px", textTransform: "uppercase", color: COLORS.moss, fontFamily: "'Helvetica Neue', sans-serif", marginBottom: "14px", display: "flex", alignItems: "center", gap: "8px" }}>
+            <span>🪣</span> Gamma Seal 5-gal Buckets — {bucketCount} total
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(90px, 1fr))", gap: "8px" }}>
+            {buckets.map((c) => (
+              <div key={c.code} style={{ background: isPreview && c.index > 0 ? COLORS.cream : "#EDF2E8", border: `1.5px solid ${isPreview && c.index > 0 ? COLORS.mist : COLORS.sage + "60"}`, borderRadius: "8px", padding: "10px 8px", textAlign: "center" }}>
+                <div style={{ fontSize: "12px", fontWeight: "700", color: COLORS.moss, fontFamily: "'Helvetica Neue', sans-serif" }}>{c.code}</div>
                 {isPreview && c.index > 0 ? (
                   <div style={{ fontSize: "9px", color: COLORS.stone, fontFamily: "'Helvetica Neue', sans-serif", marginTop: "2px" }}>🔒 locked</div>
                 ) : (
-                  <div style={{ fontSize: "9px", color: colors.accent, fontFamily: "'Helvetica Neue', sans-serif", marginTop: "2px", fontWeight: "600" }}>{c.category}</div>
+                  <div style={{ fontSize: "9px", color: COLORS.moss, fontFamily: "'Helvetica Neue', sans-serif", marginTop: "2px", fontWeight: "600" }}>{c.category}</div>
                 )}
               </div>
-            );
-          })}
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Bin grid */}
+      {bins.length > 0 && (
+        <div style={{ background: COLORS.white, border: `1px solid ${COLORS.mist}`, borderRadius: "12px", padding: "20px", marginBottom: "12px" }}>
+          <div style={{ fontSize: "11px", letterSpacing: "2px", textTransform: "uppercase", color: COLORS.clay, fontFamily: "'Helvetica Neue', sans-serif", marginBottom: "14px", display: "flex", alignItems: "center", gap: "8px" }}>
+            <span>📦</span> IRIS 82qt WeatherPro Bins — {binCount} total
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(110px, 1fr))", gap: "8px" }}>
+            {bins.map((c) => (
+              <div key={c.code} style={{ background: isPreview && c.index > 0 ? COLORS.cream : "#FEF6ED", border: `1.5px solid ${isPreview && c.index > 0 ? COLORS.mist : COLORS.clay + "40"}`, borderRadius: "8px", padding: "10px 8px", textAlign: "center" }}>
+                <div style={{ fontSize: "12px", fontWeight: "700", color: COLORS.clay, fontFamily: "'Helvetica Neue', sans-serif" }}>{c.code}</div>
+                {isPreview && c.index > 0 ? (
+                  <div style={{ fontSize: "9px", color: COLORS.stone, fontFamily: "'Helvetica Neue', sans-serif", marginTop: "2px" }}>🔒 locked</div>
+                ) : (
+                  <div style={{ fontSize: "9px", color: COLORS.clay, fontFamily: "'Helvetica Neue', sans-serif", marginTop: "2px", fontWeight: "600" }}>{c.category}</div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Canned goods shelving note */}
+      <div style={{ background: COLORS.white, border: `1px solid ${COLORS.mist}`, borderRadius: "10px", padding: "16px 20px", marginBottom: "12px" }}>
+        <div style={{ display: "flex", gap: "12px", alignItems: "flex-start" }}>
+          <span style={{ fontSize: "20px", flexShrink: 0 }}>🥫</span>
+          <div style={{ fontFamily: "'Helvetica Neue', sans-serif" }}>
+            <div style={{ fontSize: "13px", fontWeight: "700", color: COLORS.bark, marginBottom: "3px" }}>Canned goods: open shelving</div>
+            <div style={{ fontSize: "12px", color: COLORS.stone, lineHeight: "1.6" }}>
+              Cans don't need airtight containers — they're already sealed. Simple wire shelving from Home Depot or Lowe's (roughly $30–60 per shelf unit) is all you need. Your container map will include a shelving layout suggestion.
+            </div>
+          </div>
         </div>
       </div>
 
@@ -3712,7 +3725,7 @@ function ContainerMapTab({ customer, formData, isPreview }) {
       <div style={{ background: COLORS.white, border: `1px solid ${COLORS.mist}`, borderRadius: "10px", padding: "16px 20px" }}>
         <div style={{ fontSize: "13px", color: COLORS.stone, fontFamily: "'Helvetica Neue', sans-serif", lineHeight: "1.7" }}>
           {isPreview
-            ? "📋 Activate your plan to see exactly which products belong in each container. Every container gets a printed label and placement guide delivered with your first shipment."
+            ? "📋 Activate your plan to see exactly which products belong in each container. Every bucket and bin gets a printed label delivered with your first shipment."
             : "📋 Each container is labeled with its contents. As shipments are confirmed, your portal updates with exact placement instructions for each item."
           }
         </div>
@@ -3738,15 +3751,16 @@ function Portal({ customer, formData, authToken, onActivated, onLogout }) {
   const months = formData?.coverageMonths || customer?.preferences?.coverage_months || 3;
   const philosophy = formData?.foodPhilosophy || customer?.preferences?.food_philosophy || "balanced";
   const totalPeople = Object.values(formData?.household || customer?.household || {}).reduce((s, v) => s + v, 0) || 2;
-  const containerTier = formData?.containerTier || customer?.preferences?.container_tier || "good";
+  const containerTier = formData?.containerTier || customer?.preferences?.container_tier || "standard";
   const firstName = customer?.full_name?.split(" ")[0] || "there";
 
-  // Container cost estimate for ActivateModal
-  const _containerVolPPM = { wholeFood: 2.2, balanced: 1.9, freezeDried: 1.4, noPreference: 1.6 }[philosophy] || 1.9;
-  const _containerVol    = { good: 0.57, better: 1.71, best: 2.05 }[containerTier] || 0.57;
-  const _containerCount  = containerTier === "none" ? 0 : Math.ceil((totalPeople * _containerVolPPM * months) / _containerVol);
-  const _containerUnit   = { good: 8, better: 22, best: 45 }[containerTier] || 8;
-  const containerCostTotal = _containerCount * _containerUnit;
+  // Container cost estimate for ActivateModal — new standard system
+  const _philosophy      = philosophy;
+  const _bucketVolPPM    = { wholeFood: 1.40, balanced: 0.80, freezeDried: 0.20, noPreference: 0.70 }[_philosophy] || 0.80;
+  const _binVolPPM       = { wholeFood: 0.40, balanced: 0.70, freezeDried: 1.10, noPreference: 0.40 }[_philosophy] || 0.70;
+  const _buckets         = containerTier === "none" ? 0 : Math.ceil((totalPeople * _bucketVolPPM * months) / CONTAINER_SYSTEM.bucket.volumeCuFt);
+  const _bins            = containerTier === "none" ? 0 : Math.ceil((totalPeople * _binVolPPM    * months) / CONTAINER_SYSTEM.bin.volumeCuFt);
+  const containerCostTotal = _buckets * CONTAINER_SYSTEM.bucket.priceEst + _bins * CONTAINER_SYSTEM.bin.priceEst + Math.ceil((_buckets + _bins) / 5) * 12;
 
   // Generate the full food plan list (same logic as StepPlan)
   const foodPlans = {
@@ -3814,16 +3828,8 @@ function Portal({ customer, formData, authToken, onActivated, onLogout }) {
     return acc;
   }, {});
 
-  // Container assignments (simplified)
-  const containerCount = Math.ceil((totalPeople * 1.9 * months) / 0.57);
-  const containers = Array.from({ length: Math.min(containerCount, 24) }, (_, i) => {
-    const row = String.fromCharCode(65 + Math.floor(i / 4));
-    const slot = (i % 4) + 1;
-    return { code: `${row}-${slot}`, tier: containerTier };
-  });
-
   const philosophyLabel = { wholeFood: "Whole Foods First", balanced: "Balanced Mix", freezeDried: "Freeze-Dried", noPreference: "Best Value" }[philosophy] || "Balanced Mix";
-  const containerLabel = { good: "Essential", better: "Premium", best: "Professional", none: "None" }[containerTier] || "Essential";
+  const containerLabel = containerTier === "none" ? "None (already have containers)" : "Gamma Seal buckets + IRIS 82qt bins";
 
   const tabStyle = (t) => ({
     padding: "10px 18px", fontSize: "13px", fontFamily: "'Helvetica Neue', sans-serif",
@@ -3919,7 +3925,7 @@ function Portal({ customer, formData, authToken, onActivated, onLogout }) {
               <div style={{ fontSize: "11px", letterSpacing: "3px", textTransform: "uppercase", color: COLORS.clay, marginBottom: "16px", fontFamily: "'Helvetica Neue', sans-serif" }}>Monthly billing breakdown</div>
               {[
                 { label: "QuietReady Membership", desc: "Portal access, rotation tracking, recipe guide", amount: "$30.00", recurring: true },
-                { label: "Food Supply Fulfillment", desc: `Month 1 of ~${Math.ceil(((totalPeople * 1.9 * months * 1.1) * 8) / productBudget)}`, amount: `$${productBudget}.00`, recurring: false },
+                { label: "Food Supply Fulfillment", desc: `Month 1 of ~${Math.ceil(((totalPeople * 260 * months * 1.1)) / productBudget)}`, amount: `$${productBudget}.00`, recurring: false },
               ].map((item, i, arr) => (
                 <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", padding: "14px 0", borderBottom: i < arr.length - 1 ? `1px solid ${COLORS.mist}` : "none" }}>
                   <div>
