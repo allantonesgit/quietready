@@ -29,7 +29,7 @@ QuietReady.ai helps families build a personalized long-term food storage plan. C
 | Deploy directory | `/home/ubuntu/quietready` |
 | Local files | `/Users/allantone/Sites/quietready` |
 | GitHub repo | `https://github.com/allantonesgit/quietready` |
-| Web server | nginx (reverse proxy) |
+| Web server | nginx — config at `/etc/nginx/sites-enabled/quietready` |
 | Process manager | PM2 — process name: `quietready-api` |
 | Node version | v20 |
 
@@ -42,12 +42,13 @@ quietready/
 ├── CLAUDE.md                  ← You are here
 ├── deploy.sh                  ← One-command deploy: bash deploy.sh "message"
 ├── package.json
+├── .gitignore
 ├── QuietReady_Launch_Plan.docx
 ├── db/
 │   └── 001_schema.sql         ← Supabase schema — all tables defined here
 ├── public/
 │   ├── index.html             ← Single HTML shell that loads React
-│   └── quietready.jsx         ← Entire React frontend (single file)
+│   └── quietready.jsx         ← Entire React frontend (single file, ~5000 lines)
 └── server/
     ├── index.js               ← Express API server (main entry point)
     ├── billing.js             ← Billing platform integration
@@ -64,30 +65,36 @@ cd /Users/allantone/Sites/quietready
 bash deploy.sh "describe what changed"
 ```
 
-This script:
-1. Commits and pushes to GitHub
-2. SSHs into EC2, runs `git pull`, and restarts PM2
+This script commits + pushes to GitHub, then SSHs into EC2 and runs `git pull` + `pm2 restart`.
 
-### What deploy.sh does:
-```bash
-git add .
-git commit -m "your message"
-git push
-ssh into EC2 → git pull origin main → pm2 restart all --update-env
-```
-
-### If you ever need to manually restart the server:
+### If you need to manually restart the server:
 ```bash
 ssh -i /Users/allantone/ssh/QuietReady2026.pem ubuntu@ec2-54-160-4-222.compute-1.amazonaws.com
-pm2 restart all --update-env
-pm2 logs quietready-api
+cd /home/ubuntu/quietready
+pm2 restart quietready-api --update-env
+pm2 logs quietready-api --lines 30
 ```
+
+### If PM2 loses track of the process (e.g. after a server rebuild):
+```bash
+cd /home/ubuntu/quietready
+pm2 start server/index.js --name quietready-api
+pm2 save
+```
+
+### Nginx config on server:
+```
+/etc/nginx/sites-enabled/quietready
+```
+- `root` points to `/home/ubuntu/quietready/public`
+- `/api/` proxies to `http://127.0.0.1:3001`
+- SSL managed by Certbot
 
 ---
 
 ## Environment Variables
 
-All set on the server via PM2 or `/etc/environment`. Never hardcoded in files.
+All set on the server via PM2 or system environment. Never hardcoded in files.
 
 | Variable | What it's for |
 |---|---|
@@ -113,7 +120,7 @@ All set on the server via PM2 or `/etc/environment`. Never hardcoded in files.
 
 ### Frontend (`public/quietready.jsx`)
 
-Single React file — no build step, no webpack, loads directly in the browser via CDN React.
+Single React file — no build step, loads directly in the browser via CDN React. All styling is inline using the `COLORS` and `styles` constants defined at the top of the file.
 
 **Screens:**
 - **Landing page** — marketing, CTA to start questionnaire
@@ -163,15 +170,14 @@ Every plan uses the same fixed two-container system. There are no tiers or choic
 - Cans go on open shelving (customer-supplied from their hardware store)
 - Canned goods are **excluded from all container volume calculations**
 - Container map includes a shelving layout recommendation
+- Customers directed to Home Depot or Lowe's for wire/wood shelving (~$30–60/unit)
 
 ### Container Codes
 - Buckets: `B-A1`, `B-A2`, `B-B1`... (prefix `B-`)
 - Bins: `N-A1`, `N-A2`, `N-B1`... (prefix `N-`)
 - Pet containers: `P-1`, `P-2`... (prefix `P-`)
 
----
-
-## Volume Calculations (per person per month, excluding cans)
+### Volume Calculations (per person per month, excluding cans)
 
 | Philosophy | Bucket vol (cu ft) | Bin vol (cu ft) |
 |---|---|---|
@@ -182,6 +188,16 @@ Every plan uses the same fixed two-container system. There are no tiers or choic
 
 Pet food goes into bins: dogs ~0.18–0.70 cu ft/mo by size, cats ~0.22 cu ft/mo.
 
+### CONTAINER_SYSTEM constant (defined in quietready.jsx)
+```javascript
+const CONTAINER_SYSTEM = {
+  bucket: { label: "5-gal Gamma Seal Bucket", source: "Uline",
+            footprintSqFt: 1.0, heightFt: 1.208, volumeCuFt: 0.57, priceEst: 18 },
+  bin:    { label: "IRIS Remington 82qt WeatherPro Bin", source: "IRIS USA",
+            footprintSqFt: 3.33, heightFt: 1.275, volumeCuFt: 2.33, priceEst: 50 },
+};
+```
+
 ---
 
 ## Database (Supabase)
@@ -190,10 +206,10 @@ Key tables:
 
 | Table | What it stores |
 |---|---|
-| `customers` | Main customer record, status, Stripe ID, addresses |
+| `customers` | Main customer record, status, Stripe ID, addresses, `personal_cbi`, `login_token` |
 | `household` | Age bracket counts per customer |
 | `pets` | Pet type, count, size per customer |
-| `customer_preferences` | All wizard answers — philosophy, budget, equipment, etc. |
+| `customer_preferences` | All wizard answers — philosophy, budget, equipment, calories, etc. |
 | `storage_containers` | Generated container assignments (`container_type`: `bucket` or `bin`) |
 | `orders` | Monthly order records |
 | `order_items` | Line items per order |
@@ -204,7 +220,7 @@ Key tables:
 | `customer_pdfs` | Recipe guide PDF metadata and storage paths |
 | `admin_users` | Admin accounts |
 
-**Important:** `storage_containers` has a `container_type` column (`TEXT`, values `'bucket'` or `'bin'`). Added via:
+**Important:** `storage_containers` requires a `container_type` column:
 ```sql
 ALTER TABLE storage_containers ADD COLUMN IF NOT EXISTS container_type TEXT DEFAULT 'bucket';
 ```
@@ -213,34 +229,34 @@ ALTER TABLE storage_containers ADD COLUMN IF NOT EXISTS container_type TEXT DEFA
 
 ## CBI — Cost Basis Index
 
-Tracks real food cost-per-calorie using live Kroger API pricing. Updated daily at 3am UTC via EasyCron hitting `/api/admin/cbi/refresh`.
+Tracks real food cost-per-calorie using live Kroger API pricing. Updated daily at 3am UTC via EasyCron hitting `POST /api/admin/cbi/refresh` with `Authorization: Bearer {CBI_REFRESH_SECRET}`.
 
-- 12-item basket of Kroger store-brand products
+- 12-item basket of Kroger store-brand products at location `01600569` (Columbus OH)
 - Weighted average cost-per-calorie → indexed to launch baseline (100.0)
 - Used to show customers when food costs have moved since they enrolled
-- Admin dashboard shows full price history chart and customer impact flags
+- Admin dashboard shows full price history chart and per-customer impact flags
 
 ---
 
 ## Auth Flow
 
-1. Customer completes questionnaire → POST `/api/onboarding/submit`
+1. Customer completes questionnaire → `POST /api/onboarding/submit`
 2. Server creates Supabase auth user + customer record
-3. Server generates a secure random token, stores it on the customer row
+3. Server generates secure random token, stores on customer row with 24hr expiry
 4. Welcome email sent with magic link: `quietready.ai/api/auth/magic?token=xxx`
-5. Customer clicks link → confirmation page (prevents email scanner auto-consume)
-6. Customer clicks button → POST `/api/auth/magic` → server exchanges for Supabase session → redirects with `#access_token=...`
-7. Frontend detects hash, calls `/api/auth/exchange-token` → gets `sessionToken` → stores in `localStorage`
+5. Customer clicks link → confirmation page (prevents email scanner auto-consume on GET)
+6. Customer clicks button → `POST /api/auth/magic` → server exchanges for Supabase session → redirects with `#access_token=...`
+7. Frontend detects hash → calls `/api/auth/exchange-token` → gets `sessionToken` → stores in `localStorage`
 8. All portal API calls send `Authorization: Bearer {sessionToken}`
 
-Returning customers log in at `/login` with email + password, or request a new magic link.
+Returning customers log in with email + password, or request a new magic link.
 
 ---
 
 ## Billing
 
 - **Stripe** — stores payment methods, handles card collection via SetupIntent
-- **Billing platform** — handles recurring invoices (see `billing.js`)
+- **Billing platform** — handles recurring invoices (see `server/billing.js`)
 - **Flow:** Preview → customer activates → payment method saved → first invoice in 30 days
 - **Monthly charge:** $30 membership + variable food fulfillment amount
 - **After supply complete:** only $30/mo membership continues
@@ -260,17 +276,33 @@ Returning customers log in at `/login` with email + password, or request a new m
 | `mist` | `#E8E2D9` | Borders |
 | `white` | `#FDFCFA` | Cards |
 
-Fonts: Georgia (headings) + Helvetica Neue (body/UI). No external font imports — system fonts only.
+Fonts: Georgia (headings) + Helvetica Neue (body/UI). No external font imports — system fonts only. No frameworks — plain HTML/CSS/JS. No React build step — loads via CDN.
 
-**No frameworks** — plain HTML/CSS/JS for the frontend. Express only for the server. No React build step — loads via CDN.
+---
+
+## Session Log
+
+### 2026-03-21
+- Overhauled container system — replaced 3-tier selector (Essential/Premium/Professional) with fixed two-container system: Gamma Seal 5-gal buckets (Uline) + IRIS Remington 82qt WeatherPro bins (IRIS USA)
+- Added Mylar bags + oxygen absorbers as standard inclusion in every plan
+- Removed canned goods from all container volume calculations — cans go on open hardware store shelving
+- Updated throughout `quietready.jsx`: `StepContainers`, `ContainerMapTab`, `ExtrasSection`, `PlanTab`, `Portal`, `StepCoverageBudget`, `CONTAINER_SYSTEM` constant
+- Updated `generateContainers()` in `server/index.js` — now generates separate B- (bucket) and N- (bin) codes, stores `container_type` field per row
+- Reorganized project from flat structure to `public/` / `server/` / `db/` subfolders
+- Initialized Git repo at `/Users/allantone/Sites/quietready`, connected to `github.com/allantonesgit/quietready`
+- Fixed nginx config: `root` updated to `/home/ubuntu/quietready/public`, un-nested `/admin` location block
+- Fixed PM2 startup path — must run `pm2 start` from `/home/ubuntu/quietready/`, not from `/home/ubuntu/`
+- Configured PM2 auto-start on boot via systemd (`pm2 startup` + `pm2 save`)
+- Added `.gitignore` (node_modules, .DS_Store, .env, *.log)
+- Simplified `deploy.sh` — no more manual file copies, just `git pull + pm2 restart`
 
 ---
 
 ## What Claude Should Do at the Start of Each Session
 
 1. Read this file fully
-2. Read all other files in the project if relevant to the task
+2. Read any other uploaded files before writing code
 3. Ask what needs to be built or changed
-4. Make changes to files in `/Users/allantone/Sites/quietready/`
-5. Provide the exact deploy command when ready
+4. Make edits to files in `/Users/allantone/Sites/quietready/`
+5. Provide exact deploy command when ready: `bash deploy.sh "description"`
 6. Never assume Allan has development experience — always give complete, copy-paste-ready instructions
